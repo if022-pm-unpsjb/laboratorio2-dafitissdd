@@ -62,11 +62,25 @@ defmodule Libremarket.Ventas.Server do
   end
 
   @impl true
-  def handle_call({:reservar,id, cantidad}, _from, state) do
+  def handle_call({:reservar, id, cantidad}, _from, state) do
     productos = Map.get(state, :productos)
-    #buscar el productor por id, cambiar la reserva por la cantidad, restar el stock por la cantidad
-    #fijarse que la cantidad no sea mayor al stock
-    {:reply, productos, state}
-  end
 
+    # Buscar el producto por su id
+    productosActualizados =
+      Enum.map(productos, fn producto ->
+        if producto.id == id do
+          if producto.stock >= cantidad do
+            producto
+            |> Map.update!(:stock, &(&1 - cantidad))    # Reducir el stock
+            |> Map.update!(:reservado, &(&1 + cantidad)) # Aumentar la cantidad reservada
+          else
+            producto
+          end
+        else
+          producto
+        end
+      end)
+    {:reply, productosActualizados, %{state | productos: productosActualizados}}
+    #{:reply, :reservado}
+  end
 end
