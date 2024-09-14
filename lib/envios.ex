@@ -57,14 +57,23 @@ defmodule Libremarket.Envios.Server do
   """
   @impl true
   def handle_call({:calcular, id}, _from, state) do
-    result = Libremarket.Envios.calcularCosto()
-    {:reply, result, [{result, id} | state]}
+    costo = Libremarket.Envios.calcularCosto()
+    envio = %{id: id, costo: costo, estado: :pendiente}
+    {:reply, costo, [envio | state]}
   end
 
   @impl true
   def handle_call({:agendar, id}, _from, state) do
-    result = Libremarket.Envios.agendarEnvio()
-    {:reply, result, [{result, id} | state]}
+    actualizarEstado = Enum.map(state, fn envio ->
+        if envio.id == id do
+          %{envio | estado: :ok}
+        else
+          envio
+
+        end
+    end)
+    #result = Libremarket.Envios.agendarEnvio()
+    {:reply, {:ok}, actualizarEstado}
   end
 
   @impl true
