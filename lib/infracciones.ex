@@ -4,7 +4,7 @@ defmodule Libremarket.Infracciones do
     if :rand.uniform(100) < 70 do
       {:ok}
     else
-      {:error}
+      {:infraccion}
     end
   end
 
@@ -26,8 +26,8 @@ defmodule Libremarket.Infracciones.Server do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  def detectarInfraccion(pid \\ __MODULE__, id) do
-    GenServer.call(pid, {:detectar, id})
+  def detectarInfraccion(pid \\ __MODULE__, compra_id) do
+    GenServer.call(pid, {:detectar, compra_id})
   end
 
   def listarInfraccion(pid \\ __MODULE__) do
