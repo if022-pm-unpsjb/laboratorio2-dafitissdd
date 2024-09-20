@@ -53,8 +53,16 @@ defmodule Libremarket.Ventas.Server do
     GenServer.call(pid, {:reservar, id, cantidad})
   end
 
+  def liberarProducto(pid \\ __MODULE__, id, cantidad) do
+    GenServer.call(pid, {:liberar, id, cantidad})
+  end
+
   def buscarVendedor(pid \\ __MODULE__, vendedor_id) do
     GenServer.call(pid, {:buscar_vendedor, vendedor_id})
+  end
+
+  def enviarProducto(pid \\ __MODULE__, id, cantidad) do
+    GenServer.call(pid, {:enviar, id, cantidad})
   end
 
 
@@ -124,15 +132,82 @@ defmodule Libremarket.Ventas.Server do
     end
   end
 
-  @impl true
-def handle_call({:buscar_vendedor, vendedor_id}, _from, state) do
-  vendedores = Map.get(state, :vendedores)
+    @impl true
+  def handle_call({:liberar, id, cantidad}, _from, state) do
+    productos = state.productos
 
-  # Buscar el vendedor por su id
-  case Enum.find(vendedores, fn vendedor -> vendedor.id == vendedor_id end) do
-    nil -> {:reply, {:error, :vendedor_no_encontrado}, state}
-    vendedor -> {:reply, {:ok, vendedor}, state}
+    # Buscar el producto por su id usando Enum.find
+    producto = Enum.find(productos, fn p -> p.id == id end)
+
+    # Verificamos si el producto existe
+    if producto do
+      # Verificamos si hay suficiente stock reservado
+      if producto.reservado >= cantidad do
+        # Actualizamos solo el producto seleccionado
+        producto_actualizado =
+          producto
+          |> Map.update!(:stock, &(&1 + cantidad))
+          |> Map.update!(:reservado, &(&1 - cantidad))
+
+        # Actualizamos la lista de productos con el producto actualizado
+        productos_actualizados = Enum.map(productos, fn p ->
+          if p.id == id do
+            producto_actualizado
+          else
+            p
+          end
+        end)
+
+        # Devolvemos la lista actualizada y confirmamos la reserva exitosa
+        {:reply, {:ok, producto_actualizado}, %{state | productos: productos_actualizados}}
+      else
+        # No hay suficiente stock
+        {:reply, {:error, "No hay suficiente reservado disponible"}, state}
+      end
+    else
+      # Producto no encontrado
+      {:reply, {:error, "Producto no encontrado"}, state}
+    end
   end
-end
+
+  @impl true
+  def handle_call({:buscar_vendedor, vendedor_id}, _from, state) do
+    vendedores = Map.get(state, :vendedores)
+
+    # Buscar el vendedor por su id
+    case Enum.find(vendedores, fn vendedor -> vendedor.id == vendedor_id end) do
+      nil -> {:reply, {:error, :vendedor_no_encontrado}, state}
+      vendedor -> {:reply, {:ok, vendedor}, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:enviar, id, cantidad}, _from, state) do
+    productos = state.productos
+
+    # Buscar el producto por su id usando Enum.find
+    producto = Enum.find(productos, fn p -> p.id == id end)
+
+    if producto do
+      producto_actualizado =
+          producto
+          |> Map.update!(:reservado, &(&1 - cantidad))
+
+      # Actualizamos la lista de productos con el producto actualizado
+      productos_actualizados = Enum.map(productos, fn p ->
+        if p.id == id do
+          producto_actualizado
+        else
+          p
+        end
+      end)
+
+      {:reply, {:ok, producto_actualizado}, %{state | productos: productos_actualizados}}
+
+      else
+        # Producto no encontrado
+        {:reply, {:error, "Producto no encontrado"}, state}
+    end
+  end
 
 end

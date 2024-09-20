@@ -30,8 +30,8 @@ defmodule Libremarket.Envios.Server do
     GenServer.call(pid, {:calcular, id})
   end
 
-  def agendarEnvio(pid \\ __MODULE__, id) do
-    GenServer.call(pid, {:agendar, id})
+  def agendarEnvio(pid \\ __MODULE__, id, cantidad) do
+    GenServer.call(pid, {:agendar, id, cantidad})
   end
 
   def listarEnvio(pid \\ __MODULE__) do
@@ -57,23 +57,15 @@ defmodule Libremarket.Envios.Server do
   """
   @impl true
   def handle_call({:calcular, id}, _from, state) do
-    costo = Libremarket.Envios.calcularCosto()
-    envio = %{id: id, costo: costo, estado: :pendiente}
-    {:reply, costo, [envio | state]}
+    result = Libremarket.Envios.calcularCosto()
+    {:reply, result, [{result, id} | state]}
   end
 
   @impl true
-  def handle_call({:agendar, id}, _from, state) do
-    actualizarEstado = Enum.map(state, fn envio ->
-        if envio.id == id do
-          %{envio | estado: :ok}
-        else
-          envio
-
-        end
-    end)
-    #result = Libremarket.Envios.agendarEnvio()
-    {:reply, {:ok}, actualizarEstado}
+  def handle_call({:agendar, id, cantidad}, _from, state) do
+    result = Libremarket.Envios.agendarEnvio()
+    envio = Libremarket.Ventas.Server.enviarProducto(id, cantidad)
+    {:reply, envio, [{result, id, cantidad} | state]}
   end
 
   @impl true

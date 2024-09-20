@@ -107,6 +107,10 @@ defmodule Libremarket.Compras.Server do
     GenServer.call(pid, {:confirmar_compra, compra_id})
   end
 
+  def registrar_envio(pid \\ __MODULE__, compra_id, producto_id, cantidad) do
+    GenServer.call(pid, {:registrar_envio, compra_id, producto_id, cantidad})
+  end
+
   # Callbacks
 
   @doc """
@@ -172,6 +176,32 @@ defmodule Libremarket.Compras.Server do
 
     new_compra_state = Map.merge(compra_state, result)
     new_state = Map.put(state, compra_id, new_compra_state)
-    {:reply, result, new_state}
+
+    if new_compra_state["confirmada"] && new_compra_state["envio"] == "correo"do
+      producto_id = new_compra_state["producto"].id
+      cantidad = new_compra_state["cantidad"]
+
+      # Llamar directamente a la lógica de registrar envío dentro del GenServer
+      handle_call({:registrar_envio, compra_id, producto_id, cantidad}, _from, new_state)
+
+    else
+      {:reply, new_compra_state, new_state}
+    end
+  end
+
+  @impl true
+  def handle_call({:registrar_envio, compra_id, producto_id, cantidad}, _from, state) do
+    # Obtener el estado actual de la compra desde el estado del GenServer
+    compra_state = Map.get(state, compra_id, %{})
+
+    if compra_state["envio"] == "correo" do
+      {:ok, _} = Libremarket.Envios.Server.agendarEnvio(producto_id, cantidad)
+
+      update_compra_state = Map.put(compra_state, "enviado", true)
+      new_state = Map.put(state, compra_id, update_compra_state)
+      {:reply, update_compra_state, new_state}
+    else
+      {:reply, compra_state, state}
+    end
   end
 end
