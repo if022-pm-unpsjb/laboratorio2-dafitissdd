@@ -22,7 +22,7 @@ defmodule Libremarket.Infracciones.Server do
   @doc """
   Crea un nuevo servidor de infracciones
   """
-  def start_link(opts \\ []) do
+  def start_link(opts \\ %{}) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
