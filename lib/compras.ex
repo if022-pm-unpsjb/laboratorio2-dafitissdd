@@ -41,29 +41,13 @@ defmodule Libremarket.Compras do
     map
   end
 
-  def seleccionarEnvio() do
+  def seleccionarEnvio(tipoEnvio) do
     valor = :rand.uniform(100)
-
+    costo = 0
     if valor < 80 do
       costo = Libremarket.Envios.calcularCosto()
-      %{"envio" => "correo", "costo" => costo}
-    else
-      %{"envio" => "retira"}
     end
-  end
-
-  def seleccionarPago() do
-    valor = :rand.uniform(100)
-
-    if valor < 40 do
-      %{"pago" => "mercado pago"}
-    else
-      if valor >= 40 and valor < 80 do
-        %{"pago" => "crédito"}
-      else
-        %{"pago" => "efectivo"}
-      end
-    end
+    %{"envio" => tipoEnvio, "costoEnvio" => costo}
   end
 end
 
@@ -91,12 +75,12 @@ defmodule Libremarket.Compras.Server do
     GenServer.call(pid, {:selecc_producto, compra_id, producto_id, cantidad})
   end
 
-  def seleccionarEnvio(pid \\ __MODULE__, compra_id) do
-    GenServer.call(pid, {:selecc_envio, compra_id})
+  def seleccionarEnvio(pid \\ __MODULE__, compra_id, tipoEnvio) do
+    GenServer.call(pid, {:selecc_envio, compra_id, tipoEnvio})
   end
 
-  def seleccionarPago(pid \\ __MODULE__, compra_id) do
-    GenServer.call(pid, {:selecc_pago, compra_id})
+  def seleccionarPago(pid \\ __MODULE__, compra_id, tipoPago) do
+    GenServer.call(pid, {:selecc_pago, compra_id, tipoPago})
   end
 
   def obtener_estado(pid \\ __MODULE__) do
@@ -142,8 +126,8 @@ defmodule Libremarket.Compras.Server do
   end
 
   @impl true
-  def handle_call({:selecc_envio, compra_id}, _from, state) do
-    result = Libremarket.Compras.seleccionarEnvio()
+  def handle_call({:selecc_envio, compra_id, tipoEnvio}, _from, state) do
+    result = Libremarket.Compras.seleccionarEnvio(tipoEnvio)
     compra_state = Map.get(state, compra_id, %{})
     new_compra_state = Map.merge(compra_state, result)
     new_state = Map.put(state, compra_id, new_compra_state)
@@ -151,12 +135,11 @@ defmodule Libremarket.Compras.Server do
   end
 
   @impl true
-  def handle_call({:selecc_pago, compra_id}, _from, state) do
-    result = Libremarket.Compras.seleccionarPago()
+  def handle_call({:selecc_pago, compra_id, tipoPago}, _from, state) do
     compra_state = Map.get(state, compra_id, %{})
-    new_compra_state = Map.merge(compra_state, result)
+    new_compra_state = Map.merge(compra_state, %{"pago" => tipoPago})
     new_state = Map.put(state, compra_id, new_compra_state)
-    {:reply, result, new_state}
+    {:reply, %{"pago" => tipoPago}, new_state}
   end
 
   @impl true
