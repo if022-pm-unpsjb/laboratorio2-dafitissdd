@@ -23,19 +23,19 @@ defmodule Libremarket.Infracciones.Server do
   Crea un nuevo servidor de infracciones
   """
   def start_link(opts \\ %{}) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: {:global, __MODULE__})
   end
 
   def detectarInfraccion(pid \\ __MODULE__, compra_id) do
-    GenServer.call(pid, {:detectar, compra_id})
+    GenServer.call({:global, __MODULE__}, {:detectar, compra_id})
   end
 
   def listarInfraccion(pid \\ __MODULE__) do
-    GenServer.call(pid, :listar)
+    GenServer.call({:global, __MODULE__}, :listar)
   end
 
   def inspeccionar(pid \\ __MODULE__, id) do
-    GenServer.call(pid, {:inspeccionar, id})
+    GenServer.call({:global, __MODULE__}, {:inspeccionar, id})
   end
 
   # Callbacks
