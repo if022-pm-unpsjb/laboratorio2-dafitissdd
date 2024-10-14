@@ -38,31 +38,31 @@ defmodule Libremarket.Ventas.Server do
   Crea un nuevo servidor de Ventas
   """
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: {:global, __MODULE__})
   end
 
   def productos(pid \\ __MODULE__) do
-    GenServer.call(pid, :productos)
+    GenServer.call({:global, __MODULE__}, :productos)
   end
 
   def vendedores(pid \\ __MODULE__) do
-    GenServer.call(pid, :vendedores)
+    GenServer.call({:global, __MODULE__}, :vendedores)
   end
 
   def reservarProducto(pid \\ __MODULE__, id, cantidad) do
-    GenServer.call(pid, {:reservar, id, cantidad})
+    GenServer.call({:global, __MODULE__}, {:reservar, id, cantidad})
   end
 
   def liberarProducto(pid \\ __MODULE__, id, cantidad) do
-    GenServer.call(pid, {:liberar, id, cantidad})
+    GenServer.call({:global, __MODULE__}, {:liberar, id, cantidad})
   end
 
   def buscarVendedor(pid \\ __MODULE__, vendedor_id) do
-    GenServer.call(pid, {:buscar_vendedor, vendedor_id})
+    GenServer.call({:global, __MODULE__}, {:buscar_vendedor, vendedor_id})
   end
 
   def enviarProducto(pid \\ __MODULE__, id, cantidad) do
-    GenServer.call(pid, {:enviar, id, cantidad})
+    GenServer.call({:global, __MODULE__}, {:enviar, id, cantidad})
   end
 
 

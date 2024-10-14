@@ -64,35 +64,35 @@ defmodule Libremarket.Compras.Server do
   Crea un nuevo servidor de Compras
   """
   def start_link(opts \\ %{}) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: {:global, __MODULE__})
   end
 
   def comprar(pid \\ __MODULE__, compra_id, vendedor) do
-    GenServer.call(pid, {:comprar, compra_id, vendedor})
+    GenServer.call({:global, __MODULE__}, {:comprar, compra_id, vendedor})
   end
 
   def seleccionarProducto(pid \\ __MODULE__, compra_id, producto_id, cantidad) do
-    GenServer.call(pid, {:selecc_producto, compra_id, producto_id, cantidad})
+    GenServer.call({:global, __MODULE__}, {:selecc_producto, compra_id, producto_id, cantidad})
   end
 
   def seleccionarEnvio(pid \\ __MODULE__, compra_id, tipoEnvio) do
-    GenServer.call(pid, {:selecc_envio, compra_id, tipoEnvio})
+    GenServer.call({:global, __MODULE__}, {:selecc_envio, compra_id, tipoEnvio})
   end
 
   def seleccionarPago(pid \\ __MODULE__, compra_id, tipoPago) do
-    GenServer.call(pid, {:selecc_pago, compra_id, tipoPago})
+    GenServer.call({:global, __MODULE__}, {:selecc_pago, compra_id, tipoPago})
   end
 
   def obtener_estado(pid \\ __MODULE__) do
-    GenServer.call(pid, :obtener_estado)
+    GenServer.call({:global, __MODULE__}, :obtener_estado)
   end
 
   def confirmar_compra(pid \\ __MODULE__, compra_id) do
-    GenServer.call(pid, {:confirmar_compra, compra_id})
+    GenServer.call({:global, __MODULE__}, {:confirmar_compra, compra_id})
   end
 
   def registrar_envio(pid \\ __MODULE__, compra_id, producto_id, cantidad) do
-    GenServer.call(pid, {:registrar_envio, compra_id, producto_id, cantidad})
+    GenServer.call({:global, __MODULE__}, {:registrar_envio, compra_id, producto_id, cantidad})
   end
 
   # Callbacks

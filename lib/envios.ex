@@ -23,23 +23,23 @@ defmodule Libremarket.Envios.Server do
   Crea un nuevo servidor de Envios
   """
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: {:global, __MODULE__})
   end
 
   def calcularCosto(pid \\ __MODULE__, id) do
-    GenServer.call(pid, {:calcular, id})
+    GenServer.call({:global, __MODULE__}, {:calcular, id})
   end
 
   def agendarEnvio(pid \\ __MODULE__, id, cantidad) do
-    GenServer.call(pid, {:agendar, id, cantidad})
+    GenServer.call({:global, __MODULE__}, {:agendar, id, cantidad})
   end
 
   def listarEnvio(pid \\ __MODULE__) do
-    GenServer.call(pid, :listar)
+    GenServer.call({:global, __MODULE__}, :listar)
   end
 
   def inspeccionar(pid \\ __MODULE__, id) do
-    GenServer.call(pid, {:inspeccionar, id})
+    GenServer.call({:global, __MODULE__}, {:inspeccionar, id})
   end
 
   # Callbacks

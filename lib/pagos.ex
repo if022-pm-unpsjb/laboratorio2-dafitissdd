@@ -23,19 +23,19 @@ defmodule Libremarket.Pagos.Server do
   Crea un nuevo servidor de pagos
   """
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: {:global, __MODULE__})
   end
 
   def autorizarPago(pid \\ __MODULE__, id) do
-    GenServer.call(pid, {:autorizar, id})
+    GenServer.call({:global, __MODULE__}, {:autorizar, id})
   end
 
   def listarPagos(pid \\ __MODULE__) do
-    GenServer.call(pid, :listar)
+    GenServer.call({:global, __MODULE__}, :listar)
   end
 
   def inspeccionar(pid \\ __MODULE__, id) do
-    GenServer.call(pid, {:inspeccionar, id})
+    GenServer.call({:global, __MODULE__}, {:inspeccionar, id})
   end
 
   # Callbacks
