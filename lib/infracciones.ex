@@ -1,11 +1,16 @@
 defmodule Libremarket.Infracciones do
-
+  @tabla :infracciones
   def detectarInfraccion() do
     if :rand.uniform(100) < 70 do
-      {:ok}
+      "ok"
     else
-      {:infraccion}
+      "infraccion"
     end
+  end
+
+  def guardarEstado(state) do
+    :dets.insert(@tabla, {:infracciones, state})
+    :timer.send_interval(@intervalo, :guardarEstado)
   end
 
 end
@@ -18,7 +23,8 @@ defmodule Libremarket.Infracciones.Server do
   use GenServer
 
   # API del cliente
-
+  @intervalo 5_000
+  @tabla :infracciones
   @doc """
   Crea un nuevo servidor de infracciones
   """
@@ -45,7 +51,19 @@ defmodule Libremarket.Infracciones.Server do
   """
   @impl true
   def init(state) do
-    {:ok, state}
+    case :dets.open_file(@tabla,  [type: :set, file: 'infracciones.dets']) do
+      {:ok, _} ->
+        state =
+          case :dets.lookup(@tabla, :infracciones) do
+            [] -> %{}
+            [{_key, value}] -> value
+          end
+          Libremarket.Infracciones.guardarEstado(state)
+        {:ok, state}
+
+      {:error, reason} ->
+        {:stop, reason}
+    end
   end
 
   @doc """
@@ -54,17 +72,33 @@ defmodule Libremarket.Infracciones.Server do
   @impl true
   def handle_call({:detectar, id}, _from, state) do
     result = Libremarket.Infracciones.detectarInfraccion()
-    {:reply, result, [{result, id} | state]}
+    new_state = Map.put(state, id, result)
+    {:reply, result, new_state}
   end
 
   @impl true
   def handle_call(:listar, _from, state) do
+    Libremarket.Infracciones.guardarEstado(state)
     {:reply, state, state}
   end
 
   @impl true
   def handle_call({:inspeccionar, id}, _from, state) do
     raise "error"
+  end
+
+  @impl true
+  def handle_info(:guardarEstado, state) do
+    Libremarket.Infracciones.guardarEstado(state)
+    {:noreply, state}
+  end
+
+
+  @impl true
+  def terminate(_reason, state) do
+    Libremarket.Infracciones.guardarEstado(state)
+    :dets.close(@tabla)
+    :ok
   end
 
 end

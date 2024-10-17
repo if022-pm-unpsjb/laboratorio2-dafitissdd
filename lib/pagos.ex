@@ -2,9 +2,9 @@ defmodule Libremarket.Pagos do
 
   def autorizarPago() do
     if :rand.uniform(100) < 70 do
-      {:ok}
+      :ok
     else
-      {:error}
+      :error
     end
   end
 
