@@ -1,5 +1,6 @@
 defmodule Libremarket.Compras do
   @tabla :compras
+  @intervalo 60_000
   def comprar(compra_id, vendedor_id) do
     vendedor = Libremarket.Ventas.Server.buscarVendedor(vendedor_id)
 
@@ -45,24 +46,35 @@ defmodule Libremarket.Compras do
   def seleccionarEnvio(tipoEnvio) do
     valor = :rand.uniform(100)
     costo = 0
+
     if valor < 80 do
       costo = Libremarket.Envios.calcularCosto()
     end
+
     %{"envio" => tipoEnvio, "costoEnvio" => costo}
   end
 
   def guardarEstado(state) do
     :dets.insert(@tabla, {:compras, state})
-    :timer.send_interval(@intervalo, :guardarEstado)
+    :timer.send_interval(@intervalo, :guardar_estado)
   end
 
   def siguiente_id(state) do
     case Map.keys(state) do
-      [] -> 1  # Si no hay compras previas, empieza en 1
-      keys -> Enum.max(keys) + 1  # Incrementa el id más alto en 1
+      # Si no hay compras previas, empieza en 1
+      [] -> 1
+      # Incrementa el id más alto en 1
+      keys -> Enum.max(keys) + 1
     end
   end
 
+  def informarRechazo(compra_id) do
+    IO.puts("Pago rechazado para la compra #{compra_id}")
+  end
+
+  def informarInfraccion(compra_id) do
+    IO.puts("Infracción detectada para la compra #{compra_id}")
+  end
 end
 
 defmodule Libremarket.Compras.Server do
@@ -71,8 +83,8 @@ defmodule Libremarket.Compras.Server do
   """
 
   use GenServer
-  @intervalo 5_000
   @tabla :compras
+  @intervalo 60_000
   # API del cliente
 
   @doc """
@@ -110,21 +122,26 @@ defmodule Libremarket.Compras.Server do
     GenServer.call({:global, __MODULE__}, {:registrar_envio, compra_id, producto_id, cantidad})
   end
 
+  def guardar_estado(pid \\ __MODULE__) do
+    GenServer.call({:global, __MODULE__}, :guardar_estado)
+  end
+
   # Callbacks
 
   @doc """
   Inicializa el estado del servidor
   """
   @impl true
-  def init(state) do
-    case :dets.open_file(@tabla,  [type: :set, file: 'compras.dets']) do
+  def init(_opts) do
+    case :dets.open_file(@tabla, type: :set, file: ~c"compras.dets") do
       {:ok, _} ->
         state =
           case :dets.lookup(@tabla, :compras) do
             [] -> %{}
             [{_key, value}] -> value
           end
-          :timer.send_interval(@intervalo, :guardarEstado)
+
+        Libremarket.Compras.guardarEstado(state)
         {:ok, state}
 
       {:error, reason} ->
@@ -171,12 +188,11 @@ defmodule Libremarket.Compras.Server do
 
   @impl true
   def handle_call(:obtener_estado, _from, state) do
-    #Libremarket.Compras.guardarEstado(state)
     {:reply, state, state}
   end
 
   @impl true
-  def handle_info(:guardarEstado, state) do
+  def handle_info(:guardar_estado, state) do
     Libremarket.Compras.guardarEstado(state)
     {:noreply, state}
   end
@@ -190,43 +206,33 @@ defmodule Libremarket.Compras.Server do
     else
       infraccion = Map.get(compra_state, "infraccion", "unknown")
       reservado = Map.get(compra_state, "reservado", "unknown")
+      envio = Map.get(compra_state, "envio", "unknown")
 
       result =
         if infraccion == "ok" && reservado == true do
-          %{"confirmada" => true}
+          autorizada = Map.get(Libremarket.Pagos.Server.autorizarPago(compra_id), "autorizada")
+
+          if autorizada == true do
+            if envio == "correo" do
+              producto = Map.get(compra_state, "producto", "unknown")
+              cantidad = Map.get(compra_state, "cantidad", "unknown")
+              producto_id = producto[:id]
+              Libremarket.Envios.Server.agendarEnvio(compra_id, producto_id, cantidad)
+            end
+          else
+            Libremarket.Compras.informarRechazo(compra_id)
+          end
+
+          %{"confirmada" => true, "autorizada" => autorizada}
         else
+          Libremarket.Compras.informarInfraccion(compra_id)
           %{"confirmada" => false}
         end
 
       new_compra_state = Map.merge(compra_state, result)
       new_state = Map.put(state, compra_id, new_compra_state)
 
-      if new_compra_state["confirmada"] && new_compra_state["envio"] == "correo" do
-        # Asegúrate de que "producto" es un mapa que contiene ":id"
-        producto_id = Map.get(new_compra_state, "producto", %{}) |> Map.get(:id, nil)
-        cantidad = Map.get(new_compra_state, "cantidad", 0)
-
-        # Llama a la lógica de registrar envío
-        handle_call({:registrar_envio, compra_id, producto_id, cantidad}, _from, new_state)
-      else
-        {:reply, new_compra_state, new_state}
-      end
-    end
-  end
-
-  @impl true
-  def handle_call({:registrar_envio, compra_id, producto_id, cantidad}, _from, state) do
-    # Obtener el estado actual de la compra desde el estado del GenServer
-    compra_state = Map.get(state, compra_id, %{})
-
-    if compra_state["envio"] == "correo" do
-      {:ok, _} = Libremarket.Envios.Server.agendarEnvio(producto_id, cantidad)
-
-      update_compra_state = Map.put(compra_state, "enviado", true)
-      new_state = Map.put(state, compra_id, update_compra_state)
-      {:reply, update_compra_state, new_state}
-    else
-      {:reply, compra_state, state}
+      {:reply, new_compra_state, new_state}
     end
   end
 end

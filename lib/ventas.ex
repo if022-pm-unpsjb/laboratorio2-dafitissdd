@@ -1,28 +1,31 @@
 defmodule Libremarket.Ventas do
-
+  @intervalo 60_000
+  @tabla :ventas
   def productos() do
     for contador <- 1..10 do
       id = contador
-      producto = "producto"<> Integer.to_string(contador)
+      producto = "producto" <> Integer.to_string(contador)
 
       precio = :rand.uniform(1000)
       stockInicial = :rand.uniform(10)
 
       %{id: id, producto: producto, precio: precio, stock: stockInicial, reservado: 0}
     end
-
   end
 
   def vendedores() do
     for contador <- 1..5 do
       id = contador
-      vendedor = "vendedor"<> Integer.to_string(contador)
-      dni = :rand.uniform(50000000)
+      vendedor = "vendedor" <> Integer.to_string(contador)
+      dni = :rand.uniform(50_000_000)
       %{id: id, vendedor: vendedor, dni: dni}
     end
-
   end
 
+  def guardarEstado(state) do
+    :dets.insert(@tabla, {:ventas, state})
+    :timer.send_interval(@intervalo, :guardar_estado)
+  end
 end
 
 defmodule Libremarket.Ventas.Server do
@@ -31,7 +34,7 @@ defmodule Libremarket.Ventas.Server do
   """
 
   use GenServer
-
+  @tabla :ventas
   # API del cliente
 
   @doc """
@@ -65,7 +68,13 @@ defmodule Libremarket.Ventas.Server do
     GenServer.call({:global, __MODULE__}, {:enviar, id, cantidad})
   end
 
+  def obtener_estado(pid \\ __MODULE__) do
+    GenServer.call({:global, __MODULE__}, :obtener_estado)
+  end
 
+  def guardar_estado(pid \\ __MODULE__) do
+    GenServer.call({:global, __MODULE__}, :guardar_estado)
+  end
 
   # Callbacks
 
@@ -74,9 +83,22 @@ defmodule Libremarket.Ventas.Server do
   """
   @impl true
   def init(state) do
-    productos = Libremarket.Ventas.productos()
-    vendedores = Libremarket.Ventas.vendedores()
-    {:ok, %{productos: productos, vendedores: vendedores}}
+    case :dets.open_file(@tabla, type: :set, file: ~c"ventas.dets") do
+      {:ok, _} ->
+        state =
+          case :dets.lookup(@tabla, :ventas) do
+            [] ->     productos = Libremarket.Ventas.productos()
+                      vendedores = Libremarket.Ventas.vendedores()
+                      %{productos: productos, vendedores: vendedores}
+            [{_key, value}] -> value
+          end
+
+        Libremarket.Ventas.guardarEstado(state)
+        {:ok, state}
+
+      {:error, reason} ->
+        {:stop, reason}
+    end
   end
 
   @doc """
@@ -108,17 +130,20 @@ defmodule Libremarket.Ventas.Server do
         # Actualizamos solo el producto seleccionado
         producto_actualizado =
           producto
-          |> Map.update!(:stock, &(&1 - cantidad))    # Reducir el stock
-          |> Map.update!(:reservado, &(&1 + cantidad)) # Aumentar la cantidad reservada
+          # Reducir el stock
+          |> Map.update!(:stock, &(&1 - cantidad))
+          # Aumentar la cantidad reservada
+          |> Map.update!(:reservado, &(&1 + cantidad))
 
         # Actualizamos la lista de productos con el producto actualizado
-        productos_actualizados = Enum.map(productos, fn p ->
-          if p.id == id do
-            producto_actualizado
-          else
-            p
-          end
-        end)
+        productos_actualizados =
+          Enum.map(productos, fn p ->
+            if p.id == id do
+              producto_actualizado
+            else
+              p
+            end
+          end)
 
         # Devolvemos la lista actualizada y confirmamos la reserva exitosa
         {:reply, {:ok, producto_actualizado}, %{state | productos: productos_actualizados}}
@@ -132,7 +157,7 @@ defmodule Libremarket.Ventas.Server do
     end
   end
 
-    @impl true
+  @impl true
   def handle_call({:liberar, id, cantidad}, _from, state) do
     productos = state.productos
 
@@ -150,13 +175,14 @@ defmodule Libremarket.Ventas.Server do
           |> Map.update!(:reservado, &(&1 - cantidad))
 
         # Actualizamos la lista de productos con el producto actualizado
-        productos_actualizados = Enum.map(productos, fn p ->
-          if p.id == id do
-            producto_actualizado
-          else
-            p
-          end
-        end)
+        productos_actualizados =
+          Enum.map(productos, fn p ->
+            if p.id == id do
+              producto_actualizado
+            else
+              p
+            end
+          end)
 
         # Devolvemos la lista actualizada y confirmamos la reserva exitosa
         {:reply, {:ok, producto_actualizado}, %{state | productos: productos_actualizados}}
@@ -190,24 +216,35 @@ defmodule Libremarket.Ventas.Server do
 
     if producto do
       producto_actualizado =
-          producto
-          |> Map.update!(:reservado, &(&1 - cantidad))
+        producto
+        |> Map.update!(:reservado, &(&1 - cantidad))
 
       # Actualizamos la lista de productos con el producto actualizado
-      productos_actualizados = Enum.map(productos, fn p ->
-        if p.id == id do
-          producto_actualizado
-        else
-          p
-        end
-      end)
+      productos_actualizados =
+        Enum.map(productos, fn p ->
+          if p.id == id do
+            producto_actualizado
+          else
+            p
+          end
+        end)
 
       {:reply, {:ok, producto_actualizado}, %{state | productos: productos_actualizados}}
-
-      else
-        # Producto no encontrado
-        {:reply, {:error, "Producto no encontrado"}, state}
+    else
+      # Producto no encontrado
+      {:reply, {:error, "Producto no encontrado"}, state}
     end
+  end
+
+  @impl true
+  def handle_info(:guardar_estado, state) do
+    Libremarket.Ventas.guardarEstado(state)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_call(:obtener_estado, _from, state) do
+    {:reply, state, state}
   end
 
 end
