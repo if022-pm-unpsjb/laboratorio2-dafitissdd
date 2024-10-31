@@ -55,6 +55,7 @@ defmodule Libremarket.Envios.Server do
 
   # Callbacks
 
+  @spec init(any()) :: {:ok, any()} | {:stop, any()}
   @doc """
   Inicializa el estado del servidor
   """
