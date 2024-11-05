@@ -21,7 +21,12 @@ defmodule Libremarket.MixProject do
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
-    [{:libcluster, "~> 3.4"}]
+    [
+      {:libcluster, "~> 3.4"},
+      {:amqp, "~> 3.3"},
+      {:amqp_client, "~> 3.12"},
+      {:rabbit_common, "~> 3.13.4", override: true}
+    ]
   end
 
 end

@@ -75,6 +75,7 @@ defmodule Libremarket.Compras do
   def informarInfraccion(compra_id) do
     IO.puts("Infracción detectada para la compra #{compra_id}")
   end
+
 end
 
 defmodule Libremarket.Compras.Server do
@@ -207,6 +208,7 @@ defmodule Libremarket.Compras.Server do
       infraccion = Map.get(compra_state, "infraccion", "unknown")
       reservado = Map.get(compra_state, "reservado", "unknown")
       envio = Map.get(compra_state, "envio", "unknown")
+      cantidad = Map.get(compra_state, "cantidad", "unknown")
 
       result =
         if infraccion == "ok" && reservado == true do
@@ -215,16 +217,17 @@ defmodule Libremarket.Compras.Server do
           if autorizada == true do
             if envio == "correo" do
               producto = Map.get(compra_state, "producto", "unknown")
-              cantidad = Map.get(compra_state, "cantidad", "unknown")
               producto_id = producto[:id]
               Libremarket.Envios.Server.agendarEnvio(compra_id, producto_id, cantidad)
             end
           else
+            Libremarket.Ventas.Server.liberarProducto(compra_id, cantidad)
             Libremarket.Compras.informarRechazo(compra_id)
           end
 
           %{"confirmada" => true, "autorizada" => autorizada}
         else
+          Libremarket.Ventas.Server.liberarProducto(compra_id, cantidad)
           Libremarket.Compras.informarInfraccion(compra_id)
           %{"confirmada" => false}
         end

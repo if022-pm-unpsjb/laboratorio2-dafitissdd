@@ -16,6 +16,41 @@ defmodule Libremarket.Infracciones do
   end
 end
 
+defmodule Libremarket.Infracciones.Menssage do
+  def mandar_mensaje(message) do
+    {:ok, connection} = Connection.open("amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd")
+    {:ok, channel} = Channel.open(connection)
+
+    queue_name = "compras_queue"
+    exchange = "Libremarket_exchange"
+
+    Queue.declare(channel, queue_name, durable: true)
+    Exchange.declare(channel, exchange, :direct, durable: true)
+
+    Queue.bind(channel, queue_name, exchange)
+
+    Basic.publish(channel, exchange, "", message)
+
+    IO.puts("Mensaje enviado: #{message}")
+
+    Channel.close(channel)
+    Connection.close(connection)
+  end
+
+  defp recibir_mensaje(channel) do
+    receive do
+      {:basic_deliver, payload, _meta} ->
+        {eval_payload, _bindinds} = Code.eval_string(payload)
+        case eval_payload do
+          {:detectar, id} -> GenServer.call({:global, __MODULE__}, {:detectar, id})
+          _ -> IO.puts("#{eval_payload}")
+        end
+        IO.puts("Mensaje recibido: #{payload}")
+        recibir_mensaje(channel)
+    end
+  end
+end
+
 defmodule Libremarket.Infracciones.Server do
   @moduledoc """
   infracciones
@@ -74,6 +109,7 @@ defmodule Libremarket.Infracciones.Server do
   @impl true
   def handle_call({:detectar, id}, _from, state) do
     result = Libremarket.Infracciones.detectarInfraccion()
+    Libremarket.Infracciones.Menssage.mandar_mensaje(inspect(result))
     new_state = Map.put(state, id, result)
     {:reply, result, new_state}
   end
@@ -100,4 +136,5 @@ defmodule Libremarket.Infracciones.Server do
     :dets.close(@tabla)
     :ok
   end
+
 end
