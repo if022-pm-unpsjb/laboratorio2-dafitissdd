@@ -41,7 +41,7 @@ defmodule Libremarket.Infracciones.Menssage do
     # Publicar el mensaje
     Basic.publish(channel, exchange_name, "", message)
 
-    IO.puts("Mensaje enviado: #{message}")
+    IO.puts("Mensaje enviado de infracciones: #{message}")
 
     # Cerrar conexión
     Channel.close(channel)
@@ -51,7 +51,7 @@ defmodule Libremarket.Infracciones.Menssage do
   defp recibir_mensaje(channel) do
     receive do
       {:basic_deliver, payload, _meta} ->
-        IO.puts("Mensaje recibido: #{payload}")
+        IO.puts("Infracciones recibio: #{payload}")
         recibir_mensaje(channel)
     end
   end
@@ -63,7 +63,7 @@ defmodule Libremarket.Infracciones.Menssage do
       {:detectar, id} -> GenServer.call({:global, Libremarket.Infracciones.Server}, {:detectar, id})
       _ -> IO.puts("#{eval_payload}")
     end
-    IO.puts("Mensaje recibido: #{payload}")
+    IO.puts("Infracciones recibio: #{payload}")
     {:noreply, state}
   end
 end

@@ -23,7 +23,7 @@ defmodule Libremarket.Compras.Menssage do
     # Publicar el mensaje
     Basic.publish(channel, exchange_name, routing_key, message)
 
-    IO.puts("Mensaje enviado: #{message}")
+    IO.puts("Mensaje enviado de compras: #{message}")
 
     # Cerrar conexión
     Channel.close(channel)
@@ -33,7 +33,7 @@ defmodule Libremarket.Compras.Menssage do
   defp recibir_mensaje(channel) do
     receive do
       {:basic_deliver, payload, _meta} ->
-        IO.puts("Mensaje recibido: #{payload}")
+        IO.puts("Compras recibio: #{payload}")
         recibir_mensaje(channel)
     end
   end
@@ -45,7 +45,7 @@ defmodule Libremarket.Compras.Menssage do
       {:confirmar_compra, id} -> GenServer.call({:global, Libremarket.Infracciones.Server}, {:confirmar_compra, id})
       _ -> IO.puts("#{eval_payload}")
     end
-    IO.puts("Mensaje recibido: #{payload}")
+    IO.puts("Compras recibio: #{payload}")
     {:noreply, state}
   end
 end
