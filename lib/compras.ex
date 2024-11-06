@@ -7,7 +7,7 @@ defmodule Libremarket.Compras.Menssage do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
-  def mandar_mensaje(exchange_name, routing_key, message) do
+  def mandar_mensaje(message) do
     {:ok, connection} = Connection.open("amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd", ssl_options: [verify: :verify_none])
     {:ok, channel} = Channel.open(connection)
 
@@ -15,13 +15,13 @@ defmodule Libremarket.Compras.Menssage do
     #exchange_name = "Libremarket_compras_exchange"
 
     Queue.declare(channel, "compras_queue", durable: true)
-    Exchange.declare(channel, exchange_name, :direct, durable: true)
+    Exchange.declare(channel, "", :direct, durable: true)
 
     # Enlazar la cola con el exchange
-    Queue.bind(channel, "compras_queue", exchange_name)
+    Queue.bind(channel, "compras_queue", "")
 
     # Publicar el mensaje
-    Basic.publish(channel, exchange_name, routing_key, message)
+    Basic.publish(channel, "", "", message)
 
     IO.puts("Mensaje enviado de compras: #{message}")
 
@@ -272,7 +272,7 @@ defmodule Libremarket.Compras.Server do
               producto_id = producto[:id]
               Libremarket.Envios.Server.agendarEnvio(compra_id, producto_id, cantidad)
             end
-            Libremarket.Compras.Menssage.mandar_mensaje("Libremarket_compras_exchange", "compra.confirmada", "Compra confirmada: #{compra_id}")
+            Libremarket.Compras.Menssage.mandar_mensaje("Compra confirmada: #{compra_id}")
           else
             Libremarket.Ventas.Server.liberarProducto(compra_id, cantidad)
             Libremarket.Compras.informarRechazo(compra_id)

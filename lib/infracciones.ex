@@ -30,16 +30,16 @@ defmodule Libremarket.Infracciones.Menssage do
     {:ok, channel} = Channel.open(connection)
 
     queue_name = "infracciones_queue"
-    exchange_name = "Libremarket_infracciones_exchange"
+    #exchange_name = "Libremarket_infracciones_exchange"
 
     Queue.declare(channel, queue_name, durable: true)
-    Exchange.declare(channel, exchange_name, :direct, durable: true)
+    Exchange.declare(channel, "", :direct, durable: true)
 
     # Enlazar la cola con el exchange
-    Queue.bind(channel, queue_name, exchange_name)
+    Queue.bind(channel, queue_name, "")
 
     # Publicar el mensaje
-    Basic.publish(channel, exchange_name, "", message)
+    Basic.publish(channel, "", "", message)
 
     IO.puts("Mensaje enviado de infracciones: #{message}")
 
