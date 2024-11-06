@@ -26,10 +26,12 @@ defmodule Libremarket.Supervisor do
     children = [
       {Cluster.Supervisor, [topologies, [name: MyApp.ClusterSupervisor]]},
       Libremarket.Compras.Server,
-      #Libremarket.Infracciones.Server,
+      Libremarket.Infracciones.Server,
       Libremarket.Pagos.Server,
       Libremarket.Envios.Server,
       Libremarket.Ventas.Server,
+      Libremarket.Infracciones.Menssage,
+      Libremarket.Compras.Menssage
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

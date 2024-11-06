@@ -17,22 +17,33 @@ defmodule Libremarket.Infracciones do
 end
 
 defmodule Libremarket.Infracciones.Menssage do
+  use GenServer
+  use AMQP
+
+  # Public API para iniciar el proceso
+  def start_link(_) do
+    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+  end
+
   def mandar_mensaje(message) do
-    {:ok, connection} = Connection.open("amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd")
+    {:ok, connection} = Connection.open("amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd", ssl_options: [verify: :verify_none])
     {:ok, channel} = Channel.open(connection)
 
-    queue_name = "compras_queue"
-    exchange = "Libremarket_exchange"
+    queue_name = "infracciones_queue"
+    exchange_name = "Libremarket_infracciones_exchange"
 
     Queue.declare(channel, queue_name, durable: true)
-    Exchange.declare(channel, exchange, :direct, durable: true)
+    Exchange.declare(channel, exchange_name, :direct, durable: true)
 
-    Queue.bind(channel, queue_name, exchange)
+    # Enlazar la cola con el exchange
+    Queue.bind(channel, queue_name, exchange_name)
 
-    Basic.publish(channel, exchange, "", message)
+    # Publicar el mensaje
+    Basic.publish(channel, exchange_name, "", message)
 
     IO.puts("Mensaje enviado: #{message}")
 
+    # Cerrar conexión
     Channel.close(channel)
     Connection.close(connection)
   end
@@ -40,14 +51,20 @@ defmodule Libremarket.Infracciones.Menssage do
   defp recibir_mensaje(channel) do
     receive do
       {:basic_deliver, payload, _meta} ->
-        {eval_payload, _bindinds} = Code.eval_string(payload)
-        case eval_payload do
-          {:detectar, id} -> GenServer.call({:global, __MODULE__}, {:detectar, id})
-          _ -> IO.puts("#{eval_payload}")
-        end
         IO.puts("Mensaje recibido: #{payload}")
         recibir_mensaje(channel)
     end
+  end
+
+  # Handler para mensajes recibidos
+  def handle_info({:basic_deliver, payload, _meta}, state) do
+    {eval_payload, _bindings} = Code.eval_string(payload)
+    case eval_payload do
+      {:detectar, id} -> GenServer.call({:global, Libremarket.Infracciones.Server}, {:detectar, id})
+      _ -> IO.puts("#{eval_payload}")
+    end
+    IO.puts("Mensaje recibido: #{payload}")
+    {:noreply, state}
   end
 end
 

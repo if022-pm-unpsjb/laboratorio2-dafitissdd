@@ -1,3 +1,55 @@
+defmodule Libremarket.Compras.Menssage do
+  use GenServer
+  use AMQP
+
+  # Public API para iniciar el proceso
+  def start_link(_) do
+    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+  end
+
+  def mandar_mensaje(exchange_name, routing_key, message) do
+    {:ok, connection} = Connection.open("amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd", ssl_options: [verify: :verify_none])
+    {:ok, channel} = Channel.open(connection)
+
+    #queue_name = "compras_queue"
+    #exchange_name = "Libremarket_compras_exchange"
+
+    Queue.declare(channel, "compras_queue", durable: true)
+    Exchange.declare(channel, exchange_name, :direct, durable: true)
+
+    # Enlazar la cola con el exchange
+    Queue.bind(channel, "compras_queue", exchange_name)
+
+    # Publicar el mensaje
+    Basic.publish(channel, exchange_name, routing_key, message)
+
+    IO.puts("Mensaje enviado: #{message}")
+
+    # Cerrar conexión
+    Channel.close(channel)
+    Connection.close(connection)
+  end
+
+  defp recibir_mensaje(channel) do
+    receive do
+      {:basic_deliver, payload, _meta} ->
+        IO.puts("Mensaje recibido: #{payload}")
+        recibir_mensaje(channel)
+    end
+  end
+
+  # Handler para mensajes recibidos
+  def handle_info({:basic_deliver, payload, _meta}, state) do
+    {eval_payload, _bindings} = Code.eval_string(payload)
+    case eval_payload do
+      {:confirmar_compra, id} -> GenServer.call({:global, Libremarket.Infracciones.Server}, {:confirmar_compra, id})
+      _ -> IO.puts("#{eval_payload}")
+    end
+    IO.puts("Mensaje recibido: #{payload}")
+    {:noreply, state}
+  end
+end
+
 defmodule Libremarket.Compras do
   @tabla :compras
   @intervalo 60_000
@@ -95,35 +147,35 @@ defmodule Libremarket.Compras.Server do
     GenServer.start_link(__MODULE__, opts, name: {:global, __MODULE__})
   end
 
-  def comprar(pid \\ __MODULE__, vendedor) do
+  def comprar(_ \\ __MODULE__, vendedor) do
     GenServer.call({:global, __MODULE__}, {:comprar, vendedor})
   end
 
-  def seleccionarProducto(pid \\ __MODULE__, compra_id, producto_id, cantidad) do
+  def seleccionarProducto(_ \\ __MODULE__, compra_id, producto_id, cantidad) do
     GenServer.call({:global, __MODULE__}, {:selecc_producto, compra_id, producto_id, cantidad})
   end
 
-  def seleccionarEnvio(pid \\ __MODULE__, compra_id, tipoEnvio) do
+  def seleccionarEnvio(_ \\ __MODULE__, compra_id, tipoEnvio) do
     GenServer.call({:global, __MODULE__}, {:selecc_envio, compra_id, tipoEnvio})
   end
 
-  def seleccionarPago(pid \\ __MODULE__, compra_id, tipoPago) do
+  def seleccionarPago(_ \\ __MODULE__, compra_id, tipoPago) do
     GenServer.call({:global, __MODULE__}, {:selecc_pago, compra_id, tipoPago})
   end
 
-  def obtener_estado(pid \\ __MODULE__) do
+  def obtener_estado(_ \\ __MODULE__) do
     GenServer.call({:global, __MODULE__}, :obtener_estado)
   end
 
-  def confirmar_compra(pid \\ __MODULE__, compra_id) do
+  def confirmar_compra(_ \\ __MODULE__, compra_id) do
     GenServer.call({:global, __MODULE__}, {:confirmar_compra, compra_id})
   end
 
-  def registrar_envio(pid \\ __MODULE__, compra_id, producto_id, cantidad) do
+  def registrar_envio(_ \\ __MODULE__, compra_id, producto_id, cantidad) do
     GenServer.call({:global, __MODULE__}, {:registrar_envio, compra_id, producto_id, cantidad})
   end
 
-  def guardar_estado(pid \\ __MODULE__) do
+  def guardar_estado(_ \\ __MODULE__) do
     GenServer.call({:global, __MODULE__}, :guardar_estado)
   end
 
@@ -220,6 +272,7 @@ defmodule Libremarket.Compras.Server do
               producto_id = producto[:id]
               Libremarket.Envios.Server.agendarEnvio(compra_id, producto_id, cantidad)
             end
+            Libremarket.Compras.Menssage.mandar_mensaje("Libremarket_compras_exchange", "compra.confirmada", "Compra confirmada: #{compra_id}")
           else
             Libremarket.Ventas.Server.liberarProducto(compra_id, cantidad)
             Libremarket.Compras.informarRechazo(compra_id)
