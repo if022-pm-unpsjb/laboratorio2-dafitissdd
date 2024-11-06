@@ -2,51 +2,54 @@ defmodule Libremarket.Compras.Menssage do
   use GenServer
   use AMQP
 
+  def detectar_infraccion(id_compras) do
+    GenServer.cast(__MODULE__, {:detectar_infraccion, id_compras})
+  end
+
   # Public API para iniciar el proceso
   def start_link(_) do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
-  def mandar_mensaje(message) do
-    {:ok, connection} = Connection.open("amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd", ssl_options: [verify: :verify_none])
-    {:ok, channel} = Channel.open(connection)
+  @queue "compras"
 
-    #queue_name = "compras_queue"
-    #exchange_name = "Libremarket_compras_exchange"
+  @impl true
+  def init(_state) do
+    {:ok, conn} = Connection.open("amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd", ssl_options: [verify: :verify_none])
+    {:ok, chan} = Channel.open(conn)
 
-    Queue.declare(channel, "compras_queue", durable: true)
-    Exchange.declare(channel, "", :direct, durable: true)
+    {:ok, _} = Queue.declare(chan, @queue, auto_delete: true)
 
-    # Enlazar la cola con el exchange
-    Queue.bind(channel, "compras_queue", "")
-
-    # Publicar el mensaje
-    Basic.publish(channel, "", "", message)
-
-    IO.puts("Mensaje enviado de compras: #{message}")
-
-    # Cerrar conexión
-    Channel.close(channel)
-    Connection.close(connection)
+    {:ok, _consume_tag} = Basic.consume(chan, @queue, nil, no_ack: true)
+    {:ok, chan}
   end
 
-  defp recibir_mensaje(channel) do
-    receive do
-      {:basic_deliver, payload, _meta} ->
-        IO.puts("Compras recibio: #{payload}")
-        recibir_mensaje(channel)
-    end
+  @impl true
+  def handle_cast({:detectar, id}, chan) do
+    Basic.publish(chan, "", "infracciones", :binary.encode_unsigned(id))
+    #IO.puts("Mensaje enviado de infracciones: #{message}")
+    {:noreply, chan}
   end
+
+  # defp recibir_mensaje(channel) do
+  #   receive do
+  #     {:basic_deliver, payload, _meta} ->
+  #       IO.puts("Compras recibio: #{payload}")
+  #       recibir_mensaje(channel)
+  #   end
+  # end
 
   # Handler para mensajes recibidos
-  def handle_info({:basic_deliver, payload, _meta}, state) do
-    {eval_payload, _bindings} = Code.eval_string(payload)
-    case eval_payload do
-      {:confirmar_compra, id} -> GenServer.call({:global, Libremarket.Infracciones.Server}, {:confirmar_compra, id})
-      _ -> IO.puts("#{eval_payload}")
+  @impl true
+  def handle_info({:basic_deliver, payload, %{delivery_tag: _tag, redelivered: _redelivered, correlation_id: id}}, chan) do
+    # {eval_payload, _bindings} = Code.eval_string(payload)
+    case id do
+      "infracciones" ->
+        resultado = :erlang.binary_to_term(payload)
+        Compras.Server.actualizar_infraccion(resultado)
     end
-    IO.puts("Compras recibio: #{payload}")
-    {:noreply, state}
+    IO.puts("Infracciones recibio: #{payload}")
+    {:noreply, chan}
   end
 end
 
@@ -78,7 +81,7 @@ defmodule Libremarket.Compras do
           %{
             "producto" => producto_actualizado,
             "cantidad" => cantidad,
-            "infraccion" => infraccion,
+            "infraccion" => nil,
             "reservado" => true
           }
 
@@ -86,11 +89,10 @@ defmodule Libremarket.Compras do
           %{
             "producto" => producto_id,
             "cantidad" => cantidad,
-            "infraccion" => infraccion,
+            "infraccion" => nil,
             "reservado" => false
           }
       end
-
     # Retornamos el mapa
     map
   end
@@ -122,6 +124,10 @@ defmodule Libremarket.Compras do
 
   def informarRechazo(compra_id) do
     IO.puts("Pago rechazado para la compra #{compra_id}")
+  end
+
+  defp detectar_infraccion(compra_id) do
+    Libremarket.Compras.Menssage.detectar_infraccion(compra_id)
   end
 
   def informarInfraccion(compra_id) do
@@ -177,6 +183,10 @@ defmodule Libremarket.Compras.Server do
 
   def guardar_estado(_ \\ __MODULE__) do
     GenServer.call({:global, __MODULE__}, :guardar_estado)
+  end
+
+  def actualizar_infraccion(_ \\ __MODULE__, resultado) do
+    GenServer.call({:global, __MODULE__}, {:actualizar_infraccion, resultado})
   end
 
   # Callbacks

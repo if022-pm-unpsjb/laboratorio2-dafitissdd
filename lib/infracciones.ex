@@ -20,51 +20,50 @@ defmodule Libremarket.Infracciones.Menssage do
   use GenServer
   use AMQP
 
+  @queue "infracciones"
+
+  @impl true
+  def init(_state) do
+    {:ok, conn} = Connection.open("amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd", ssl_options: [verify: :verify_none])
+    {:ok, chan} = Channel.open(conn)
+
+    {:ok, _} = Queue.declare(chan, @queue, auto_delete: true)
+
+    {:ok, _consume_tag} = Basic.consume(chan, @queue, nil, no_ack: true)
+    {:ok, chan}
+  end
+
   # Public API para iniciar el proceso
   def start_link(_) do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
-  def mandar_mensaje(message) do
-    {:ok, connection} = Connection.open("amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd", ssl_options: [verify: :verify_none])
-    {:ok, channel} = Channel.open(connection)
-
-    queue_name = "infracciones_queue"
-    #exchange_name = "Libremarket_infracciones_exchange"
-
-    Queue.declare(channel, queue_name, durable: true)
-    Exchange.declare(channel, "", :direct, durable: true)
-
-    # Enlazar la cola con el exchange
-    Queue.bind(channel, queue_name, "")
-
-    # Publicar el mensaje
-    Basic.publish(channel, "", "", message)
-
-    IO.puts("Mensaje enviado de infracciones: #{message}")
-
-    # Cerrar conexión
-    Channel.close(channel)
-    Connection.close(connection)
+  @impl true
+  def handle_cast({:confirmar_compra, id, message}, chan) do
+    Basic.publish(chan, "", "compras", :binary.encode_unsigned(message))
+    #IO.puts("Mensaje enviado de infracciones: #{message}")
+    {:noreply, chan}
   end
 
-  defp recibir_mensaje(channel) do
-    receive do
-      {:basic_deliver, payload, _meta} ->
-        IO.puts("Infracciones recibio: #{payload}")
-        recibir_mensaje(channel)
-    end
-  end
+  # defp recibir_mensaje(channel) do
+  #   receive do
+  #     {:basic_deliver, payload, _meta} ->
+  #       IO.puts("Infracciones recibio: #{payload}")
+  #       recibir_mensaje(channel)
+  #   end
+  # end
 
   # Handler para mensajes recibidos
-  def handle_info({:basic_deliver, payload, _meta}, state) do
-    {eval_payload, _bindings} = Code.eval_string(payload)
-    case eval_payload do
-      {:detectar, id} -> GenServer.call({:global, Libremarket.Infracciones.Server}, {:detectar, id})
-      _ -> IO.puts("#{eval_payload}")
+  @impl true
+  def handle_info({:basic_deliver, payload, %{delivery_tag: _tag, redelivered: _redelivered, correlation_id: id}}, chan) do
+    # {eval_payload, _bindings} = Code.eval_string(payload)
+    case id do
+      "infracciones" ->
+        resultado = :erlang.binary_to_term(payload)
+        Compras.Server.actualizar_infraccion(resultado)
     end
     IO.puts("Infracciones recibio: #{payload}")
-    {:noreply, state}
+    {:noreply, chan}
   end
 end
 
@@ -86,7 +85,7 @@ defmodule Libremarket.Infracciones.Server do
   end
 
   def detectarInfraccion(pid \\ __MODULE__, compra_id) do
-    GenServer.call({:global, __MODULE__}, {:detectar, compra_id})
+    GenServer.cast({:global, __MODULE__}, {:detectar, compra_id})
   end
 
   def listarInfraccion(pid \\ __MODULE__) do
@@ -124,11 +123,11 @@ defmodule Libremarket.Infracciones.Server do
   Callback para un call :detectar
   """
   @impl true
-  def handle_call({:detectar, id}, _from, state) do
+  def handle_cast({:detectar, id}, state) do
     result = Libremarket.Infracciones.detectarInfraccion()
     Libremarket.Infracciones.Menssage.mandar_mensaje(inspect(result))
     new_state = Map.put(state, id, result)
-    {:reply, result, new_state}
+    {:noreply, new_state}
   end
 
   @impl true
