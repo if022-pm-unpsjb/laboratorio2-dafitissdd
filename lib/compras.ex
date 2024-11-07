@@ -46,7 +46,7 @@ defmodule Libremarket.Compras.Menssage do
     case id do
       "infracciones" ->
         resultado = :erlang.binary_to_term(payload)
-        Compras.Server.actualizar_infraccion(resultado)
+        Compras.Server.actualizar_infraccion(resultado, id) #el id que se debe pasar aca es el de compra
     end
     IO.puts("Infracciones recibio: #{payload}")
     {:noreply, chan}
@@ -186,7 +186,7 @@ defmodule Libremarket.Compras.Server do
   end
 
   def actualizar_infraccion(_ \\ __MODULE__, resultado) do
-    GenServer.call({:global, __MODULE__}, {:actualizar_infraccion, resultado})
+    GenServer.call({:global, __MODULE__}, {:actualizar_infraccion, resultado, compra_id})
   end
 
   # Callbacks
