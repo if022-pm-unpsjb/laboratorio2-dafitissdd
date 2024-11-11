@@ -1,4 +1,4 @@
-defmodule Libremarket.Compras.Menssage do
+defmodule Libremarket.Compras.Message do
   use GenServer
   use AMQP
 
@@ -28,6 +28,13 @@ defmodule Libremarket.Compras.Menssage do
   def handle_cast({:detectar_infraccion, id}, chan) do
     Basic.publish(chan, "", "infracciones", :binary.encode_unsigned(id))
     #IO.puts("Mensaje enviado de infracciones: #{message}")
+    {:noreply, chan}
+  end
+
+
+  # Maneja el mensaje básico de confirmación de consumo
+  @impl true
+  def handle_info({:basic_consume_ok, _consumer_info}, chan) do
     {:noreply, chan}
   end
 
@@ -127,7 +134,7 @@ defmodule Libremarket.Compras do
   end
 
   defp detectar_infraccion(compra_id) do
-    Libremarket.Compras.Menssage.detectar_infraccion(compra_id)
+    Libremarket.Compras.Message.detectar_infraccion(compra_id)
   end
 
   def informarInfraccion(compra_id) do
@@ -185,7 +192,7 @@ defmodule Libremarket.Compras.Server do
     GenServer.call({:global, __MODULE__}, :guardar_estado)
   end
 
-  def actualizar_infraccion(_ \\ __MODULE__, resultado) do
+  def actualizar_infraccion(_ \\ __MODULE__, resultado,compra_id) do
     GenServer.call({:global, __MODULE__}, {:actualizar_infraccion, resultado, compra_id})
   end
 
@@ -283,7 +290,7 @@ defmodule Libremarket.Compras.Server do
               producto_id = producto[:id]
               Libremarket.Envios.Server.agendarEnvio(compra_id, producto_id, cantidad)
             end
-            Libremarket.Compras.Menssage.mandar_mensaje("Compra confirmada: #{compra_id}")
+            Libremarket.Compras.Message.mandar_mensaje("Compra confirmada: #{compra_id}")
           else
             Libremarket.Ventas.Server.liberarProducto(compra_id, cantidad)
             Libremarket.Compras.informarRechazo(compra_id)

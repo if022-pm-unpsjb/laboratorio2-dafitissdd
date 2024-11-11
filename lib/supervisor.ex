@@ -31,7 +31,7 @@ defmodule Libremarket.Supervisor do
       Libremarket.Envios.Server,
       Libremarket.Ventas.Server,
       Libremarket.Infracciones.Menssage,
-      Libremarket.Compras.Menssage
+      Libremarket.Compras.Message
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

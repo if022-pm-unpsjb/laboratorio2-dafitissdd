@@ -53,18 +53,41 @@ defmodule Libremarket.Infracciones.Menssage do
   #   end
   # end
 
+   # Maneja el mensaje básico de confirmación de consumo
+  @impl true
+  def handle_info({:basic_consume_ok, _consumer_info}, chan) do
+    {:noreply, chan}
+  end
+
+
   # Handler para mensajes recibidos
   @impl true
   def handle_info({:basic_deliver, payload, %{delivery_tag: _tag, redelivered: _redelivered, correlation_id: id}}, chan) do
-    # {eval_payload, _bindings} = Code.eval_string(payload)
-    case id do
-      "infracciones" ->
-        resultado = :erlang.binary_to_term(payload)
-        Compras.Server.actualizar_infraccion(resultado)
+    # Convertimos el payload a término binario solo si existe un `id` válido.
+    if id != :undefined and id == "infracciones" do
+      resultado = :erlang.binary_to_term(payload)
+      Compras.Server.actualizar_infraccion(resultado)
+      IO.puts("Infracciones recibió: #{inspect(resultado)}")
+    else
+      IO.puts("Mensaje recibido sin ID relevante: #{inspect(payload)}")
     end
-    IO.puts("Infracciones recibio: #{payload}")
+
     {:noreply, chan}
   end
+
+
+  # Handler para mensajes recibidos
+  #@impl true
+  #def handle_info({:basic_deliver, payload, %{delivery_tag: _tag, redelivered: _redelivered, correlation_id: id}}, chan) do
+    # {eval_payload, _bindings} = Code.eval_string(payload)
+    #case id do
+      #"infracciones" ->
+        #resultado = :erlang.binary_to_term(payload)
+        #Compras.Server.actualizar_infraccion(resultado)
+    #end
+    #IO.puts("Infracciones recibio: #{payload}")
+    #{:noreply, chan}
+  #end
 end
 
 defmodule Libremarket.Infracciones.Server do
