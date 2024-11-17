@@ -25,9 +25,9 @@ defmodule Libremarket.Compras.Message do
   end
 
   @impl true
-  def handle_cast({:detectar_infraccion, id}, chan) do
-    Basic.publish(chan, "", "infracciones", :binary.encode_unsigned(id))
-    #IO.puts("Mensaje enviado de infracciones: #{message}")
+  def handle_cast({:detectar_infraccion, compra_id}, chan) do
+    payload = %{action: "detectar_infraccion", compra_id: compra_id}
+    Basic.publish(chan, "", "infracciones", :erlang.term_to_binary(payload))
     {:noreply, chan}
   end
 
@@ -38,24 +38,19 @@ defmodule Libremarket.Compras.Message do
     {:noreply, chan}
   end
 
-  # defp recibir_mensaje(channel) do
-  #   receive do
-  #     {:basic_deliver, payload, _meta} ->
-  #       IO.puts("Compras recibio: #{payload}")
-  #       recibir_mensaje(channel)
-  #   end
-  # end
-
   # Handler para mensajes recibidos
   @impl true
   def handle_info({:basic_deliver, payload, %{delivery_tag: _tag, redelivered: _redelivered, correlation_id: id}}, chan) do
-    # {eval_payload, _bindings} = Code.eval_string(payload)
-    case id do
-      "infracciones" ->
-        resultado = :erlang.binary_to_term(payload)
-        Compras.Server.actualizar_infraccion(resultado, id) #el id que se debe pasar aca es el de compra
+    message = :erlang.binary_to_term(payload)
+
+    case message[:action] do
+      "detectar_infraccion" ->
+        compra_id = message[:compra_id]
+        Libremarket.Infracciones.Server.detectarInfraccion(compra_id)
+      _ ->
+      IO.puts("Mensaje no reconocido con ID: #{id}")
     end
-    IO.puts("Infracciones recibio: #{payload}")
+    IO.puts("Compras recibio: #{payload}")
     {:noreply, chan}
   end
 end
@@ -234,6 +229,9 @@ defmodule Libremarket.Compras.Server do
   def handle_call({:selecc_producto, compra_id, producto_id, cantidad}, _from, state) do
     result = Libremarket.Compras.seleccionarProducto(compra_id, producto_id, cantidad)
     Libremarket.Compras.Message.detectar_infraccion(compra_id)
+
+     Process.sleep(5000) #tiempo para detectar y actualizar la infraccion
+
     compra_state = Map.get(state, compra_id, %{})
     new_compra_state = Map.merge(compra_state, result)
     new_state = Map.put(state, compra_id, new_compra_state)
@@ -290,7 +288,7 @@ defmodule Libremarket.Compras.Server do
               producto_id = producto[:id]
               Libremarket.Envios.Server.agendarEnvio(compra_id, producto_id, cantidad)
             end
-            Libremarket.Compras.Message.mandar_mensaje("Compra confirmada: #{compra_id}")
+            #Libremarket.Compras.Message.mandar_mensaje("Compra confirmada: #{compra_id}")
           else
             Libremarket.Ventas.Server.liberarProducto(compra_id, cantidad)
             Libremarket.Compras.informarRechazo(compra_id)
@@ -312,6 +310,7 @@ defmodule Libremarket.Compras.Server do
 
   @impl true
   def handle_call({:actualizar_infraccion, resultado, compra_id}, _from, state) do
+    IO.puts("Actualizando infracción para compra #{compra_id} con resultado: #{inspect(resultado)}")
     compra_state = Map.get(state, compra_id, %{})
 
     if compra_state == %{} do
