@@ -30,7 +30,7 @@ defmodule Libremarket.Supervisor do
       Libremarket.Pagos.Server,
       Libremarket.Envios.Server,
       Libremarket.Ventas.Server,
-      Libremarket.Infracciones.Menssage,
+      Libremarket.Infracciones.Message,
       Libremarket.Compras.Message
     ]
 

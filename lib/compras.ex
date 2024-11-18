@@ -2,36 +2,51 @@ defmodule Libremarket.Compras.Message do
   use GenServer
   use AMQP
 
-  def detectar_infraccion(id_compras) do
-    GenServer.cast(__MODULE__, {:detectar_infraccion, id_compras})
-  end
+  @queue "compras"
 
   # Public API para iniciar el proceso
   def start_link(_) do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
-  @queue "compras"
+  def detectar_infraccion(id_compras) do
+    GenServer.cast(__MODULE__, {:detectar_infraccion, id_compras})
+  end
 
   @impl true
   def init(_state) do
-    {:ok, conn} = Connection.open("amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd", ssl_options: [verify: :verify_none])
+    {:ok, conn} =
+      Connection.open(
+        "amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd",
+        ssl_options: [verify: :verify_none]
+      )
+
     {:ok, chan} = Channel.open(conn)
 
-    {:ok, _} = Queue.declare(chan, @queue, auto_delete: true)
+    # {:ok, _} = Queue.declare(chan, @queue, auto_delete: true)
 
-    {:ok, _consume_tag} = Basic.consume(chan, @queue, nil, no_ack: true)
-    {:ok, chan}
+    # {:ok, _consume_tag} = Basic.consume(chan, @queue, nil, no_ack: true)
+    # {:ok, chan}
+    Queue.declare(chan, @queue, auto_delete: true)
+    Basic.consume(chan, @queue, nil, no_ack: true)
+
+    {:ok, %{conn: conn, chan: chan}}
   end
+
+  # @impl true
+  # def handle_cast({:detectar_infraccion, compra_id}, chan) do
+  #   payload = %{action: "detectar_infraccion", compra_id: compra_id}
+  #   Basic.publish(chan, "", "infracciones", :erlang.term_to_binary(payload))
+  #   {:noreply, chan}
+  # end
 
   @impl true
-  def handle_cast({:detectar_infraccion, compra_id}, chan) do
-    payload = %{action: "detectar_infraccion", compra_id: compra_id}
-    Basic.publish(chan, "", "infracciones", :erlang.term_to_binary(payload))
-    {:noreply, chan}
+  def handle_cast({:detectar_infraccion, compra_id}, state) do
+    payload = :erlang.term_to_binary(%{action: "detectar_infraccion", compra_id: compra_id})
+    Basic.publish(state.chan, "", "infracciones", payload)
+    IO.inspect(payload, label: "Mensaje publicado")
+    {:noreply, state}
   end
-
-
   # Maneja el mensaje básico de confirmación de consumo
   @impl true
   def handle_info({:basic_consume_ok, _consumer_info}, chan) do
@@ -39,19 +54,40 @@ defmodule Libremarket.Compras.Message do
   end
 
   # Handler para mensajes recibidos
+  #   @impl true
+  #   def handle_info({:basic_deliver, payload, %{delivery_tag: _tag, redelivered: _redelivered, correlation_id: id}}, chan) do
+  #     message = :erlang.binary_to_term(payload)
+
+  #     case message[:action] do
+  #       "detectar_infraccion" ->
+  #         compra_id = message[:compra_id]
+  #         Libremarket.Infracciones.Server.detectarInfraccion(compra_id)
+  #       _ ->
+  #       IO.puts("Mensaje no reconocido con ID: #{id}")
+  #     end
+  #     IO.puts("Compras recibio: #{payload}")
+  #     {:noreply, chan}
+  #   end
   @impl true
-  def handle_info({:basic_deliver, payload, %{delivery_tag: _tag, redelivered: _redelivered, correlation_id: id}}, chan) do
+  def handle_info({:basic_deliver, payload, _meta}, state) do
     message = :erlang.binary_to_term(payload)
 
     case message[:action] do
       "detectar_infraccion" ->
-        compra_id = message[:compra_id]
-        Libremarket.Infracciones.Server.detectarInfraccion(compra_id)
+        Libremarket.Compras.Server.detectarInfraccion(message[:compra_id])
+
       _ ->
-      IO.puts("Mensaje no reconocido con ID: #{id}")
+        IO.puts("Acción desconocida: #{inspect(message)}")
     end
-    IO.puts("Compras recibio: #{payload}")
-    {:noreply, chan}
+
+    {:noreply, state}
+  end
+
+  @impl true
+  def terminate(_reason, %{conn: conn, chan: chan}) do
+    Channel.close(chan)
+    Connection.close(conn)
+    :ok
   end
 end
 
@@ -74,7 +110,7 @@ defmodule Libremarket.Compras do
   end
 
   def seleccionarProducto(compra_id, producto_id, cantidad) do
-    #Libremarket.Infracciones.Server.detectarInfraccion(compra_id)
+    # Libremarket.Infracciones.Server.detectarInfraccion(compra_id)
     resultado = Libremarket.Ventas.Server.reservarProducto(producto_id, cantidad)
 
     map =
@@ -95,6 +131,7 @@ defmodule Libremarket.Compras do
             "reservado" => false
           }
       end
+
     # Retornamos el mapa
     map
   end
@@ -112,7 +149,6 @@ defmodule Libremarket.Compras do
 
   def guardarEstado(state) do
     :dets.insert(@tabla, {:compras, state})
-    :timer.send_interval(@intervalo, :guardar_estado)
   end
 
   def siguiente_id(state) do
@@ -128,14 +164,14 @@ defmodule Libremarket.Compras do
     IO.puts("Pago rechazado para la compra #{compra_id}")
   end
 
-  defp detectar_infraccion(compra_id) do
+  defp detectarInfraccion(compra_id) do
+    IO.puts("Enviando mensaje de infracción para compra #{compra_id}")
     Libremarket.Compras.Message.detectar_infraccion(compra_id)
   end
 
   def informarInfraccion(compra_id) do
     IO.puts("Infracción detectada para la compra #{compra_id}")
   end
-
 end
 
 defmodule Libremarket.Compras.Server do
@@ -156,19 +192,19 @@ defmodule Libremarket.Compras.Server do
   end
 
   def comprar(_ \\ __MODULE__, vendedor) do
-    GenServer.call({:global, __MODULE__}, {:comprar, vendedor})
+    GenServer.call({:global, __MODULE__}, {:comprar, vendedor}, 15_000)
   end
 
   def seleccionarProducto(_ \\ __MODULE__, compra_id, producto_id, cantidad) do
-    GenServer.call({:global, __MODULE__}, {:selecc_producto, compra_id, producto_id, cantidad})
+    GenServer.call({:global, __MODULE__}, {:selecc_producto, compra_id, producto_id, cantidad}, 15_000)
   end
 
   def seleccionarEnvio(_ \\ __MODULE__, compra_id, tipoEnvio) do
-    GenServer.call({:global, __MODULE__}, {:selecc_envio, compra_id, tipoEnvio})
+    GenServer.call({:global, __MODULE__}, {:selecc_envio, compra_id, tipoEnvio}, 15_000)
   end
 
   def seleccionarPago(_ \\ __MODULE__, compra_id, tipoPago) do
-    GenServer.call({:global, __MODULE__}, {:selecc_pago, compra_id, tipoPago})
+    GenServer.call({:global, __MODULE__}, {:selecc_pago, compra_id, tipoPago}, 15_000)
   end
 
   def obtener_estado(_ \\ __MODULE__) do
@@ -187,8 +223,8 @@ defmodule Libremarket.Compras.Server do
     GenServer.call({:global, __MODULE__}, :guardar_estado)
   end
 
-  def actualizar_infraccion(_ \\ __MODULE__, resultado,compra_id) do
-    GenServer.call({:global, __MODULE__}, {:actualizar_infraccion, resultado, compra_id})
+  def actualizar_infraccion(_ \\ __MODULE__, resultado, compra_id) do
+    GenServer.call({:global, __MODULE__}, {:actualizar_infraccion, resultado, compra_id}, 15_000)
   end
 
   # Callbacks
@@ -206,7 +242,7 @@ defmodule Libremarket.Compras.Server do
             [{_key, value}] -> value
           end
 
-        Libremarket.Compras.guardarEstado(state)
+          :timer.send_interval(@intervalo, self(), :guardar_estado)
         {:ok, state}
 
       {:error, reason} ->
@@ -229,8 +265,11 @@ defmodule Libremarket.Compras.Server do
   def handle_call({:selecc_producto, compra_id, producto_id, cantidad}, _from, state) do
     result = Libremarket.Compras.seleccionarProducto(compra_id, producto_id, cantidad)
     Libremarket.Compras.Message.detectar_infraccion(compra_id)
+    IO.inspect({:procesando, compra_id, producto_id, cantidad}, label: "Seleccionando producto")
+    # tiempo para detectar y actualizar la infraccion
+    #Process.sleep(10000)
 
-     Process.sleep(5000) #tiempo para detectar y actualizar la infraccion
+    IO.inspect({:procesando, compra_id, producto_id, cantidad}, label: "Seleccionando producto")
 
     compra_state = Map.get(state, compra_id, %{})
     new_compra_state = Map.merge(compra_state, result)
@@ -288,7 +327,8 @@ defmodule Libremarket.Compras.Server do
               producto_id = producto[:id]
               Libremarket.Envios.Server.agendarEnvio(compra_id, producto_id, cantidad)
             end
-            #Libremarket.Compras.Message.mandar_mensaje("Compra confirmada: #{compra_id}")
+
+            # Libremarket.Compras.Message.mandar_mensaje("Compra confirmada: #{compra_id}")
           else
             Libremarket.Ventas.Server.liberarProducto(compra_id, cantidad)
             Libremarket.Compras.informarRechazo(compra_id)
@@ -310,7 +350,10 @@ defmodule Libremarket.Compras.Server do
 
   @impl true
   def handle_call({:actualizar_infraccion, resultado, compra_id}, _from, state) do
-    IO.puts("Actualizando infracción para compra #{compra_id} con resultado: #{inspect(resultado)}")
+    IO.puts(
+      "Actualizando infracción para compra #{compra_id} con resultado: #{inspect(resultado)}"
+    )
+
     compra_state = Map.get(state, compra_id, %{})
 
     if compra_state == %{} do
