@@ -72,9 +72,14 @@ defmodule Libremarket.Compras.Message do
   def handle_info({:basic_deliver, payload, _meta}, state) do
     message = :erlang.binary_to_term(payload)
 
-    case message[:action] do
-      "detectar_infraccion" ->
-        Libremarket.Compras.Server.detectarInfraccion(message[:compra_id])
+    case message[:result] do
+      "ok" ->
+        IO.puts("Enviando mensaje a infracciones para compra #{message[:compra_id]}")
+        Libremarket.Compras.Server.actualizar_infraccion(message[:result], message[:compra_id])
+
+      "infraccion" ->
+        IO.puts("Enviando mensaje a infracciones para compra #{message[:compra_id]}")
+        Libremarket.Compras.Server.actualizar_infraccion(message[:result], message[:compra_id])
 
       _ ->
         IO.puts("Acción desconocida: #{inspect(message)}")
@@ -267,7 +272,7 @@ defmodule Libremarket.Compras.Server do
     Libremarket.Compras.Message.detectar_infraccion(compra_id)
     IO.inspect({:procesando, compra_id, producto_id, cantidad}, label: "Seleccionando producto")
     # tiempo para detectar y actualizar la infraccion
-    #Process.sleep(10000)
+    #Process.sleep(20_000)
 
     IO.inspect({:procesando, compra_id, producto_id, cantidad}, label: "Seleccionando producto")
 

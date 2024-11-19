@@ -61,7 +61,10 @@ defmodule Libremarket.Infracciones.Message do
 
   @impl true
   def handle_cast({:mandar_actualizacion, id, message}, state) do
+    IO.puts("Enviando actualización: #{inspect(message)}")
     payload = :erlang.term_to_binary(%{result: message, compra_id: id})
+    IO.puts("Enviando payload: #{inspect(payload)}")
+
     Basic.publish(state.chan, "", "compras", payload)
     {:noreply, state}
   end
@@ -92,9 +95,23 @@ defmodule Libremarket.Infracciones.Message do
   @impl true
   def handle_info({:basic_deliver, payload, _meta}, state) do
     message = :erlang.binary_to_term(payload)
-    IO.inspect(message, label: "Mensaje deserializado")
-    Libremarket.Compras.Server.actualizar_infraccion(message[:compra_id], message[:result])
-    IO.puts("Recibido mensaje: #{inspect(message)}")
+    IO.puts("Mensaje recibido: #{inspect(message)}")
+
+    case message[:action] do
+      "detectar_infraccion" ->
+        IO.puts("Enviando mensaje a infracciones para compra #{message[:compra_id]}")
+        Libremarket.Infracciones.Server.detectarInfraccion(message[:compra_id])
+      _ ->
+        IO.puts("Acción desconocida: #{inspect(message)}")
+  end
+
+
+    #IO.puts("Estado de compra #{message[:compra_id]}: #{message[:result]}")
+    #IO.inspect(message, label: "Mensaje deserializado")
+    #Libremarket.Compras.Server.actualizar_infraccion(message[:result], message[:compra_id])
+    #IO.puts("Recibido mensaje: #{inspect(message)}")
+    #Process.sleep(10_000)
+
     {:noreply, state}
   end
 
@@ -184,10 +201,10 @@ defmodule Libremarket.Infracciones.Server do
   @impl true
   def handle_cast({:detectar_infraccion, compra_id}, state) do
     result = Libremarket.Infracciones.detectarInfraccion()
-    new_state = Map.put(state, compra_id, result)
-    IO.inspect({:procesando, compra_id, result}, label: "Detectó infracción")
     Libremarket.Infracciones.Message.mandar_actualizacion(compra_id, result)
-    {:noreply, compra_id, new_state}
+    #IO.inspect({:procesando, compra_id, result}, label: "Detectó infracción")
+    new_state = Map.put(state, compra_id, result)
+    {:noreply, new_state}
   end
 
   @impl true
