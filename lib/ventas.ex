@@ -1,5 +1,4 @@
 defmodule Libremarket.Ventas do
-  @intervalo 60_000
   @tabla :ventas
   def productos() do
     for contador <- 1..10 do
@@ -12,7 +11,6 @@ defmodule Libremarket.Ventas do
       %{id: id, producto: producto, precio: precio, stock: stockInicial, reservado: 0}
     end
   end
-
   def vendedores() do
     for contador <- 1..5 do
       id = contador
@@ -21,10 +19,80 @@ defmodule Libremarket.Ventas do
       %{id: id, vendedor: vendedor, dni: dni}
     end
   end
-
   def guardarEstado(state) do
     :dets.insert(@tabla, {:ventas, state})
-    :timer.send_interval(@intervalo, :guardar_estado)
+  end
+end
+
+defmodule Libremarket.Ventas.Message do
+  use GenServer
+  use AMQP
+
+  @queue "ventas"
+
+  # Public API para iniciar el proceso
+  def start_link(_) do
+    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+  end
+
+  @impl true
+  def init(_state) do
+    {:ok, conn} =
+      Connection.open(
+        "amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd",
+        ssl_options: [verify: :verify_none]
+      )
+
+    {:ok, chan} = Channel.open(conn)
+
+    Queue.declare(chan, @queue, auto_delete: true)
+    Basic.consume(chan, @queue, nil, no_ack: true)
+
+    {:ok, %{conn: conn, chan: chan}}
+  end
+
+  def mandar_actualizacion(id_producto, resultado) do
+    GenServer.cast(__MODULE__, {:mandar_actualizacion, id_producto, resultado})
+  end
+
+  @impl true
+  def handle_cast({:mandar_actualizacion, id, message}, state) do
+    IO.puts("Enviando actualización: #{inspect(message)}")
+    payload = :erlang.term_to_binary(%{result: message, compra_id: id})
+    IO.puts("Enviando payload: #{inspect(payload)}")
+
+    Basic.publish(state.chan, "", "compras", payload)
+    {:noreply, state}
+  end
+
+  # Maneja el mensaje básico de confirmación de consumo
+  @impl true
+  def handle_info({:basic_consume_ok, _consumer_info}, chan) do
+    {:noreply, chan}
+  end
+
+  @impl true
+  def handle_info({:basic_deliver, payload, _meta}, state) do
+    message = :erlang.binary_to_term(payload)
+    IO.puts("Mensaje recibido: #{inspect(message)}")
+
+    case message[:action] do
+      "reservar" ->
+        IO.puts("Recibiendo mensaje de compras #{message[:producto_id]}")
+        Libremarket.Ventas.Server.reservarProducto(message[:producto_id], message[:cantidad])
+
+      _ ->
+        IO.puts("Acción desconocida: #{inspect(message)}")
+    end
+
+    {:noreply, state}
+  end
+
+  @impl true
+  def terminate(_reason, %{conn: conn, chan: chan}) do
+    Channel.close(chan)
+    Connection.close(conn)
+    :ok
   end
 end
 
@@ -35,6 +103,7 @@ defmodule Libremarket.Ventas.Server do
 
   use GenServer
   @tabla :ventas
+  @intervalo 60_000
   # API del cliente
 
   @doc """
@@ -52,8 +121,8 @@ defmodule Libremarket.Ventas.Server do
     GenServer.call({:global, __MODULE__}, :vendedores)
   end
 
-  def reservarProducto(pid \\ __MODULE__, id, cantidad) do
-    GenServer.call({:global, __MODULE__}, {:reservar, id, cantidad})
+  def reservarProducto(pid \\ __MODULE__, producto_id, cantidad) do
+    GenServer.cast({:global, __MODULE__}, {:reservar, producto_id, cantidad})
   end
 
   def liberarProducto(pid \\ __MODULE__, id, cantidad) do
@@ -93,8 +162,8 @@ defmodule Libremarket.Ventas.Server do
             [{_key, value}] -> value
           end
 
-        Libremarket.Ventas.guardarEstado(state)
-        {:ok, state}
+          :timer.send_interval(@intervalo, self(), :guardarEstado)
+          {:ok, state}
 
       {:error, reason} ->
         {:stop, reason}
@@ -117,11 +186,11 @@ defmodule Libremarket.Ventas.Server do
   end
 
   @impl true
-  def handle_call({:reservar, id, cantidad}, _from, state) do
+  def handle_cast({:reservar, compra_id, producto_id, cantidad}, state) do
     productos = state.productos
 
     # Buscar el producto por su id usando Enum.find
-    producto = Enum.find(productos, fn p -> p.id == id end)
+    producto = Enum.find(productos, fn p -> p.id == producto_id end)
 
     # Verificamos si el producto existe
     if producto do
@@ -138,22 +207,24 @@ defmodule Libremarket.Ventas.Server do
         # Actualizamos la lista de productos con el producto actualizado
         productos_actualizados =
           Enum.map(productos, fn p ->
-            if p.id == id do
+            if p.id == producto_id do
               producto_actualizado
             else
               p
             end
           end)
-
+          Libremarket.Ventas.Message.mandar_actualizacion(compra_id, producto_actualizado)
         # Devolvemos la lista actualizada y confirmamos la reserva exitosa
-        {:reply, {:ok, producto_actualizado}, %{state | productos: productos_actualizados}}
+        {:noreply, productos_actualizados}
       else
         # No hay suficiente stock
-        {:reply, {:error, "No hay suficiente stock disponible"}, state}
+        Libremarket.Ventas.Message.mandar_actualizacion(compra_id, producto)
+        {:noreply, state}
       end
     else
       # Producto no encontrado
-      {:reply, {:error, "Producto no encontrado"}, state}
+        Libremarket.Ventas.Message.mandar_actualizacion(compra_id, producto_id)
+        {:noreply, state}
     end
   end
 

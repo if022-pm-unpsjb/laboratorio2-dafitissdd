@@ -1,6 +1,5 @@
 defmodule Libremarket.Infracciones do
   @tabla :infracciones
-  @intervalo 60_000
 
   def detectarInfraccion() do
     if :rand.uniform(100) < 70 do
@@ -33,11 +32,8 @@ defmodule Libremarket.Infracciones.Message do
         "amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd",
         ssl_options: [verify: :verify_none]
       )
-    {:ok, chan} = Channel.open(conn)
 
-    # {:ok, _} = Queue.declare(chan, @queue, auto_delete: true)
-    # {:ok, _consume_tag} = Basic.consume(chan, @queue, nil, no_ack: true)
-    # {:ok, chan}
+    {:ok, chan} = Channel.open(conn)
 
     Queue.declare(chan, @queue, auto_delete: true)
     Basic.consume(chan, @queue, nil, no_ack: true)
@@ -45,19 +41,9 @@ defmodule Libremarket.Infracciones.Message do
     {:ok, %{conn: conn, chan: chan}}
   end
 
-
   def mandar_actualizacion(id_compras, resultado) do
     GenServer.cast(__MODULE__, {:mandar_actualizacion, id_compras, resultado})
   end
-
-
-  # @impl true
-  # def handle_cast({:mandar_actualizacion, id, message}, chan) do
-  #   IO.puts("Enviando actualización: #{inspect(message)}")
-  #   payload = %{result: message, compra_id: id}
-  #   Basic.publish(chan, "", "compras", :erlang.term_to_binary(payload))
-  #   {:noreply, chan}
-  # end
 
   @impl true
   def handle_cast({:mandar_actualizacion, id, message}, state) do
@@ -75,23 +61,6 @@ defmodule Libremarket.Infracciones.Message do
     {:noreply, chan}
   end
 
-  # Handler para mensajes recibidos
-  # @impl true
-  # def handle_info(
-  #       {:basic_deliver, payload,
-  #        %{delivery_tag: _tag, redelivered: _redelivered, correlation_id: id}},
-  #       chan
-  #     ) do
-  #   message = :erlang.binary_to_term(payload)
-  #   result = message[:result]
-  #   compra_id = message[:compra_id]
-
-  #   IO.puts("Estado de compra #{compra_id}: #{result}")
-  #   Libremarket.Compras.Server.actualizar_infraccion(result, compra_id)
-
-  #   {:noreply, chan}
-  # end
-
   @impl true
   def handle_info({:basic_deliver, payload, _meta}, state) do
     message = :erlang.binary_to_term(payload)
@@ -101,16 +70,10 @@ defmodule Libremarket.Infracciones.Message do
       "detectar_infraccion" ->
         IO.puts("Enviando mensaje a infracciones para compra #{message[:compra_id]}")
         Libremarket.Infracciones.Server.detectarInfraccion(message[:compra_id])
+
       _ ->
         IO.puts("Acción desconocida: #{inspect(message)}")
-  end
-
-
-    #IO.puts("Estado de compra #{message[:compra_id]}: #{message[:result]}")
-    #IO.inspect(message, label: "Mensaje deserializado")
-    #Libremarket.Compras.Server.actualizar_infraccion(message[:result], message[:compra_id])
-    #IO.puts("Recibido mensaje: #{inspect(message)}")
-    #Process.sleep(10_000)
+    end
 
     {:noreply, state}
   end
@@ -133,6 +96,7 @@ defmodule Libremarket.Infracciones.Server do
   # API del cliente
 
   @tabla :infracciones
+  @intervalo 60_000
   @doc """
   Crea un nuevo servidor de infracciones
   """
@@ -167,7 +131,7 @@ defmodule Libremarket.Infracciones.Server do
             [{_key, value}] -> value
           end
 
-        :timer.send_interval(@intervalo, :guardarEstado)
+        :timer.send_interval(@intervalo, self(), :guardarEstado)
         {:ok, state}
 
       {:error, reason} ->
@@ -175,34 +139,10 @@ defmodule Libremarket.Infracciones.Server do
     end
   end
 
-  # @impl true
-  # def init(_) do
-  #   case :dets.open_file(@tabla, type: :set, file: ~c"infracciones.dets") do
-  #     {:ok, _} ->
-  #       state = :dets.lookup(@tabla, :infracciones) |> Enum.into(%{})
-  #       :timer.send_interval(@intervalo, self(), :guardar_estado)
-  #       {:ok, state}
-
-  #     {:error, reason} -> {:stop, reason}
-  #   end
-  # end
-
-  @doc """
-  Callback para un call :detectar
-  """
-  # @impl true
-  # def handle_cast({:detectar_infraccion, id}, state) do
-  #   result = Libremarket.Infracciones.detectarInfraccion()
-  #   Libremarket.Infracciones.Message.mandar_actualizacion(id, inspect(result))
-  #   new_state = Map.put(state, id, result)
-  #   {:noreply, new_state}
-  # end
-
   @impl true
   def handle_cast({:detectar_infraccion, compra_id}, state) do
     result = Libremarket.Infracciones.detectarInfraccion()
     Libremarket.Infracciones.Message.mandar_actualizacion(compra_id, result)
-    #IO.inspect({:procesando, compra_id, result}, label: "Detectó infracción")
     new_state = Map.put(state, compra_id, result)
     {:noreply, new_state}
   end
@@ -211,11 +151,6 @@ defmodule Libremarket.Infracciones.Server do
   def handle_call(:listar, _from, state) do
     {:reply, state, state}
   end
-
-  # @impl true
-  # def handle_call({:inspeccionar, id}, _from, state) do
-  #   raise "error"
-  # end
 
   @impl true
   def handle_info(:guardarEstado, state) do
