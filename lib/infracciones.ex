@@ -48,7 +48,7 @@ defmodule Libremarket.Infracciones.Message do
   @impl true
   def handle_cast({:mandar_actualizacion, id, message}, state) do
     IO.puts("Enviando actualización: #{inspect(message)}")
-    payload = :erlang.term_to_binary(%{result: message, compra_id: id})
+    payload = :erlang.term_to_binary(%{result: message, compra_id: id, accion: "detectar"})
     IO.puts("Enviando payload: #{inspect(payload)}")
 
     Basic.publish(state.chan, "", "compras", payload)
