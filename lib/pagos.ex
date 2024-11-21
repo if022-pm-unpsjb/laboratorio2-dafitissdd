@@ -1,3 +1,64 @@
+defmodule Libremarket.Pagos.Message do
+  use GenServer
+  use AMQP
+
+  @queue "pagos"
+
+  # Public API para iniciar el proceso
+  def start_link(_) do
+    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+  end
+
+  @impl true
+  def init(_state) do
+    {:ok, conn} =
+      Connection.open(
+        "amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd",
+        ssl_options: [verify: :verify_none]
+      )
+    {:ok, chan} = Channel.open(conn)
+
+    # {:ok, _} = Queue.declare(chan, @queue, auto_delete: true)
+    # {:ok, _consume_tag} = Basic.consume(chan, @queue, nil, no_ack: true)
+    # {:ok, chan}
+
+    Queue.declare(chan, @queue, auto_delete: true)
+    Basic.consume(chan, @queue, nil, no_ack: true)
+
+    {:ok, %{conn: conn, chan: chan}}
+  end
+
+  def mandar_actualizacion(id_compras, resultado) do
+    GenServer.cast(__MODULE__, {:mandar_actualizacion, id_compras, resultado})
+  end
+
+  @impl true
+  def handle_cast({:mandar_actualizacion, id, message}, state) do
+    #IO.puts("Enviando actualización: #{inspect(message)}")
+    payload = :erlang.term_to_binary(%{result: message, compra_id: id})
+    #IO.puts("Enviando payload: #{inspect(payload)}")
+
+    Basic.publish(state.chan, "", "compras", payload)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:basic_deliver, payload, _meta}, state) do
+    message = :erlang.binary_to_term(payload)
+    IO.puts("Mensaje recibido: #{inspect(message)}")
+
+    case message[:action] do
+      "autorizar" ->
+        IO.puts("Autorizando compra: #{message[:compra_id]}")
+        Libremarket.Pagos.Server.autorizarPago(message[:compra_id])
+      _ ->
+        IO.puts("Acción desconocida: #{inspect(message)}")
+  end
+
+    {:noreply, state}
+  end
+end
+
 defmodule Libremarket.Pagos do
   @tabla :pagos
   @intervalo 60_000
@@ -78,6 +139,7 @@ defmodule Libremarket.Pagos.Server do
   @impl true
   def handle_call({:autorizar, compra_id}, _from, state) do
     result = Libremarket.Pagos.autorizarPago(compra_id)
+    Libremarket.Pagos.Message.mandar_actualizacion(compra_id, result)
     new_state = Map.put(state, compra_id, result)
     {:reply, result, new_state}
   end
