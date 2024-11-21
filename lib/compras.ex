@@ -1,104 +1,6 @@
-defmodule Libremarket.Compras.Message do
-  use GenServer
-  use AMQP
-
-  @queue "compras"
-
-  # Public API para iniciar el proceso
-  def start_link(_) do
-    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
-  end
-
-  def detectar_infraccion(id_compras) do
-    GenServer.cast(__MODULE__, {:detectar_infraccion, id_compras})
-  end
-
-  @impl true
-  def init(_state) do
-    {:ok, conn} =
-      Connection.open(
-        "amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd",
-        ssl_options: [verify: :verify_none]
-      )
-
-    {:ok, chan} = Channel.open(conn)
-
-    # {:ok, _} = Queue.declare(chan, @queue, auto_delete: true)
-
-    # {:ok, _consume_tag} = Basic.consume(chan, @queue, nil, no_ack: true)
-    # {:ok, chan}
-    Queue.declare(chan, @queue, auto_delete: true)
-    Basic.consume(chan, @queue, nil, no_ack: true)
-
-    {:ok, %{conn: conn, chan: chan}}
-  end
-
-  # @impl true
-  # def handle_cast({:detectar_infraccion, compra_id}, chan) do
-  #   payload = %{action: "detectar_infraccion", compra_id: compra_id}
-  #   Basic.publish(chan, "", "infracciones", :erlang.term_to_binary(payload))
-  #   {:noreply, chan}
-  # end
-
-  @impl true
-  def handle_cast({:detectar_infraccion, compra_id}, state) do
-    payload = :erlang.term_to_binary(%{action: "detectar_infraccion", compra_id: compra_id})
-    Basic.publish(state.chan, "", "infracciones", payload)
-    IO.inspect(payload, label: "Mensaje publicado")
-    {:noreply, state}
-  end
-  # Maneja el mensaje básico de confirmación de consumo
-  @impl true
-  def handle_info({:basic_consume_ok, _consumer_info}, chan) do
-    {:noreply, chan}
-  end
-
-  # Handler para mensajes recibidos
-  #   @impl true
-  #   def handle_info({:basic_deliver, payload, %{delivery_tag: _tag, redelivered: _redelivered, correlation_id: id}}, chan) do
-  #     message = :erlang.binary_to_term(payload)
-
-  #     case message[:action] do
-  #       "detectar_infraccion" ->
-  #         compra_id = message[:compra_id]
-  #         Libremarket.Infracciones.Server.detectarInfraccion(compra_id)
-  #       _ ->
-  #       IO.puts("Mensaje no reconocido con ID: #{id}")
-  #     end
-  #     IO.puts("Compras recibio: #{payload}")
-  #     {:noreply, chan}
-  #   end
-  @impl true
-  def handle_info({:basic_deliver, payload, _meta}, state) do
-    message = :erlang.binary_to_term(payload)
-
-    case message[:result] do
-      "ok" ->
-        IO.puts("Enviando mensaje a infracciones para compra #{message[:compra_id]}")
-        Libremarket.Compras.Server.actualizar_infraccion(message[:result], message[:compra_id])
-
-      "infraccion" ->
-        IO.puts("Enviando mensaje a infracciones para compra #{message[:compra_id]}")
-        Libremarket.Compras.Server.actualizar_infraccion(message[:result], message[:compra_id])
-
-      _ ->
-        IO.puts("Acción desconocida: #{inspect(message)}")
-    end
-
-    {:noreply, state}
-  end
-
-  @impl true
-  def terminate(_reason, %{conn: conn, chan: chan}) do
-    Channel.close(chan)
-    Connection.close(conn)
-    :ok
-  end
-end
-
 defmodule Libremarket.Compras do
   @tabla :compras
-  @intervalo 60_000
+
   def comprar(compra_id, vendedor_id) do
     vendedor = Libremarket.Ventas.Server.buscarVendedor(vendedor_id)
 
@@ -169,13 +71,89 @@ defmodule Libremarket.Compras do
     IO.puts("Pago rechazado para la compra #{compra_id}")
   end
 
-  defp detectarInfraccion(compra_id) do
-    IO.puts("Enviando mensaje de infracción para compra #{compra_id}")
-    Libremarket.Compras.Message.detectar_infraccion(compra_id)
-  end
-
   def informarInfraccion(compra_id) do
     IO.puts("Infracción detectada para la compra #{compra_id}")
+  end
+end
+
+defmodule Libremarket.Compras.Message do
+  use GenServer
+  use AMQP
+
+  @queue "compras"
+
+  # Public API para iniciar el proceso
+  def start_link(_) do
+    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+  end
+
+  def detectar_infraccion(id_compras) do
+    GenServer.cast(__MODULE__, {:detectar_infraccion, id_compras})
+  end
+
+  @impl true
+  def init(_state) do
+    {:ok, conn} =
+      Connection.open(
+        "amqps://sjyxztwd:nQ28DYT15fVo8thS6lxtyHvI6ZUw7GcK@cougar.rmq.cloudamqp.com/sjyxztwd",
+        ssl_options: [verify: :verify_none]
+      )
+
+    {:ok, chan} = Channel.open(conn)
+
+    Queue.declare(chan, @queue, auto_delete: true)
+    Basic.consume(chan, @queue, nil, no_ack: true)
+
+    {:ok, %{conn: conn, chan: chan}}
+  end
+
+  @impl true
+  def handle_cast({:detectar_infraccion, compra_id}, state) do
+    payload = :erlang.term_to_binary(%{action: "detectar_infraccion", compra_id: compra_id})
+    Basic.publish(state.chan, "", "infracciones", payload)
+    IO.inspect(payload, label: "Mensaje publicado")
+    {:noreply, state}
+  end
+
+  # Maneja el mensaje básico de confirmación de consumo
+  @impl true
+  def handle_info({:basic_consume_ok, _consumer_info}, chan) do
+    {:noreply, chan}
+  end
+
+  # Handler para mensajes recibidos
+  @impl true
+  def handle_info({:basic_deliver, payload, _meta}, state) do
+    message = :erlang.binary_to_term(payload)
+
+    case message[:result] do
+      "ok" ->
+        IO.puts("Enviando mensaje a infracciones para compra #{message[:compra_id]}")
+        Libremarket.Compras.Server.actualizar_infraccion(message[:result], message[:compra_id])
+
+      "infraccion" ->
+        IO.puts("Recibiendo mensaje de infracciones para compras #{message[:compra_id]}")
+        Libremarket.Compras.Server.actualizar_infraccion(message[:result], message[:compra_id])
+
+      _ ->
+        IO.puts("Acción desconocida: #{inspect(message)}")
+
+        "reservar" ->
+        IO.puts("Enviando mensaje a infracciones para compra #{message[:compra_id]}")
+        Libremarket.Compras.Server.actualizar_reserva(message[:result], message[:compra_id])
+
+      _ ->
+        IO.puts("Acción desconocida: #{inspect(message)}")
+    end
+
+    {:noreply, state}
+  end
+
+  @impl true
+  def terminate(_reason, %{conn: conn, chan: chan}) do
+    Channel.close(chan)
+    Connection.close(conn)
+    :ok
   end
 end
 
@@ -201,7 +179,11 @@ defmodule Libremarket.Compras.Server do
   end
 
   def seleccionarProducto(_ \\ __MODULE__, compra_id, producto_id, cantidad) do
-    GenServer.call({:global, __MODULE__}, {:selecc_producto, compra_id, producto_id, cantidad}, 15_000)
+    GenServer.call(
+      {:global, __MODULE__},
+      {:selecc_producto, compra_id, producto_id, cantidad},
+      15_000
+    )
   end
 
   def seleccionarEnvio(_ \\ __MODULE__, compra_id, tipoEnvio) do
@@ -232,6 +214,11 @@ defmodule Libremarket.Compras.Server do
     GenServer.call({:global, __MODULE__}, {:actualizar_infraccion, resultado, compra_id}, 15_000)
   end
 
+  def actualizar_reserva(_ \\ __MODULE__, resultado, compra_id) do
+    GenServer.call({:global, __MODULE__}, {:actualizar_reserva, resultado, compra_id}, 15_000)
+  end
+
+
   # Callbacks
 
   @doc """
@@ -247,7 +234,7 @@ defmodule Libremarket.Compras.Server do
             [{_key, value}] -> value
           end
 
-          :timer.send_interval(@intervalo, self(), :guardar_estado)
+        :timer.send_interval(@intervalo, self(), :guardar_estado)
         {:ok, state}
 
       {:error, reason} ->
@@ -270,10 +257,6 @@ defmodule Libremarket.Compras.Server do
   def handle_call({:selecc_producto, compra_id, producto_id, cantidad}, _from, state) do
     result = Libremarket.Compras.seleccionarProducto(compra_id, producto_id, cantidad)
     Libremarket.Compras.Message.detectar_infraccion(compra_id)
-    IO.inspect({:procesando, compra_id, producto_id, cantidad}, label: "Seleccionando producto")
-    # tiempo para detectar y actualizar la infraccion
-    #Process.sleep(20_000)
-
     IO.inspect({:procesando, compra_id, producto_id, cantidad}, label: "Seleccionando producto")
 
     compra_state = Map.get(state, compra_id, %{})
