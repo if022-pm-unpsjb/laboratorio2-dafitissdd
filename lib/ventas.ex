@@ -19,6 +19,7 @@ defmodule Libremarket.Ventas do
       %{id: id, vendedor: vendedor, dni: dni}
     end
   end
+
   def guardarEstado(state) do
     :dets.insert(@tabla, {:ventas, state})
   end
@@ -51,14 +52,14 @@ defmodule Libremarket.Ventas.Message do
     {:ok, %{conn: conn, chan: chan}}
   end
 
-  def mandar_actualizacion(id_producto, resultado) do
-    GenServer.cast(__MODULE__, {:mandar_actualizacion, id_producto, resultado})
+  def mandar_actualizacion(compra_id, producto_id, message) do
+    GenServer.cast(__MODULE__, {:mandar_actualizacion, compra_id, producto_id, message})
   end
 
   @impl true
-  def handle_cast({:mandar_actualizacion, id, message}, state) do
+  def handle_cast({:mandar_actualizacion, compra_id, producto_id, message}, state) do
     IO.puts("Enviando actualización: #{inspect(message)}")
-    payload = :erlang.term_to_binary(%{result: message, compra_id: id})
+    payload = :erlang.term_to_binary(%{result: message, compra_id: compra_id, producto_id: producto_id, accion: "reservar"})
     IO.puts("Enviando payload: #{inspect(payload)}")
 
     Basic.publish(state.chan, "", "compras", payload)
@@ -79,7 +80,7 @@ defmodule Libremarket.Ventas.Message do
     case message[:action] do
       "reservar" ->
         IO.puts("Recibiendo mensaje de compras #{message[:producto_id]}")
-        Libremarket.Ventas.Server.reservarProducto(message[:producto_id], message[:cantidad])
+        Libremarket.Ventas.Server.reservarProducto(message[:compra_id], message[:producto_id], message[:cantidad])
 
       _ ->
         IO.puts("Acción desconocida: #{inspect(message)}")
@@ -162,7 +163,7 @@ defmodule Libremarket.Ventas.Server do
             [{_key, value}] -> value
           end
 
-          :timer.send_interval(@intervalo, self(), :guardarEstado)
+          :timer.send_interval(@intervalo, self(), :guardar_estado)
           {:ok, state}
 
       {:error, reason} ->
@@ -213,17 +214,13 @@ defmodule Libremarket.Ventas.Server do
               p
             end
           end)
-          Libremarket.Ventas.Message.mandar_actualizacion(compra_id, producto_actualizado)
+          Libremarket.Ventas.Message.mandar_actualizacion(compra_id, producto_id, true)
         # Devolvemos la lista actualizada y confirmamos la reserva exitosa
         {:noreply, productos_actualizados}
-      else
-        # No hay suficiente stock
-        Libremarket.Ventas.Message.mandar_actualizacion(compra_id, producto)
-        {:noreply, state}
       end
     else
-      # Producto no encontrado
-        Libremarket.Ventas.Message.mandar_actualizacion(compra_id, producto_id)
+      # Producto no encontrado o no hay stock
+        Libremarket.Ventas.Message.mandar_actualizacion(compra_id, producto_id, false)
         {:noreply, state}
     end
   end
