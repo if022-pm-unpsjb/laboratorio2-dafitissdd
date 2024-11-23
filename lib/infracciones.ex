@@ -47,9 +47,9 @@ defmodule Libremarket.Infracciones.Message do
 
   @impl true
   def handle_cast({:mandar_actualizacion, id, message}, state) do
-    IO.puts("Enviando actualización: #{inspect(message)}")
+    IO.puts("Infracciones: {Enviando actualización: #{inspect(message)}}")
     payload = :erlang.term_to_binary(%{result: message, compra_id: id, accion: "detectar"})
-    IO.puts("Enviando payload: #{inspect(payload)}")
+    #IO.puts("Enviando payload: #{inspect(payload)}")
 
     Basic.publish(state.chan, "", "compras", payload)
     {:noreply, state}
@@ -64,11 +64,11 @@ defmodule Libremarket.Infracciones.Message do
   @impl true
   def handle_info({:basic_deliver, payload, _meta}, state) do
     message = :erlang.binary_to_term(payload)
-    IO.puts("Mensaje recibido: #{inspect(message)}")
+    IO.puts("Infracciones: {Mensaje recibido: #{inspect(message)}}")
 
     case message[:action] do
       "detectar_infraccion" ->
-        IO.puts("Enviando mensaje a infracciones para compra #{message[:compra_id]}")
+        IO.puts("Infracciones: {Proceso de infraccion de la compra #{message[:compra_id]}}")
         Libremarket.Infracciones.Server.detectarInfraccion(message[:compra_id])
 
       _ ->

@@ -9,10 +9,10 @@ defmodule Comprador do
       ) do
     idCompra = Libremarket.Compras.Server.comprar(idVendedor)
     if is_integer(idCompra) do
-      Libremarket.Compras.Server.seleccionarProducto(idCompra, idProducto, cantidad)
-      Libremarket.Compras.Server.seleccionarEnvio(idCompra, tipoEnvio)
-      Libremarket.Compras.Server.seleccionarPago(idCompra, tipoPago)
-      Libremarket.Compras.Server.confirmar_compra(idCompra)
+      Libremarket.Compras.Server.seleccionarProducto(idCompra, idProducto, cantidad, tipoPago, tipoEnvio)
+      #Libremarket.Compras.Server.seleccionarEnvio(idCompra, tipoEnvio)
+      #Libremarket.Compras.Server.seleccionarPago(idCompra, tipoPago)
+      #Libremarket.Compras.Server.confirmar_compra(idCompra, tipoPago)
     else
       {:error, "Error al generar ID de compra"}
     end

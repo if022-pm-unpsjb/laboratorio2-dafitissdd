@@ -34,9 +34,8 @@ defmodule Libremarket.Pagos.Message do
 
   @impl true
   def handle_cast({:mandar_actualizacion, id, message}, state) do
-    #IO.puts("Enviando actualización: #{inspect(message)}")
-    payload = :erlang.term_to_binary(%{result: message, compra_id: id})
-    #IO.puts("Enviando payload: #{inspect(payload)}")
+    IO.puts("Pagos: {Enviando actualización: #{inspect(message)}}")
+    payload = :erlang.term_to_binary(%{result: message, compra_id: id, accion: "autorizar"})
 
     Basic.publish(state.chan, "", "compras", payload)
     {:noreply, state}
@@ -45,11 +44,11 @@ defmodule Libremarket.Pagos.Message do
   @impl true
   def handle_info({:basic_deliver, payload, _meta}, state) do
     message = :erlang.binary_to_term(payload)
-    IO.puts("Mensaje recibido: #{inspect(message)}")
+    IO.puts("Pagos: {Mensaje recibido: #{inspect(message)}}")
 
     case message[:action] do
-      "autorizar" ->
-        IO.puts("Autorizando compra: #{message[:compra_id]}")
+      "autorizar_pago" ->
+        IO.puts("Pagos: {Proceso de autorizacion de la compra: #{message[:compra_id]}}")
         Libremarket.Pagos.Server.autorizarPago(message[:compra_id])
       _ ->
         IO.puts("Acción desconocida: #{inspect(message)}")
@@ -65,9 +64,9 @@ defmodule Libremarket.Pagos do
 
   def autorizarPago(compra_id) do
     if :rand.uniform(100) < 70 do
-      %{"autorizada" => true}
+      true
     else
-      %{"autorizada" => false}
+      false
     end
   end
 

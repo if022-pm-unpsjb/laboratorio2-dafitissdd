@@ -58,9 +58,9 @@ defmodule Libremarket.Ventas.Message do
 
   @impl true
   def handle_cast({:mandar_actualizacion, compra_id, producto_id, message}, state) do
-    IO.puts("Enviando actualización: #{inspect(message)}")
+    IO.puts("Ventas: {Enviando actualización: #{inspect(message)}}")
     payload = :erlang.term_to_binary(%{result: message, compra_id: compra_id, producto_id: producto_id, accion: "reservar"})
-    IO.puts("Enviando payload: #{inspect(payload)}")
+    #IO.puts("Enviando payload: #{inspect(payload)}")
 
     Basic.publish(state.chan, "", "compras", payload)
     {:noreply, state}
@@ -75,12 +75,13 @@ defmodule Libremarket.Ventas.Message do
   @impl true
   def handle_info({:basic_deliver, payload, _meta}, state) do
     message = :erlang.binary_to_term(payload)
-    IO.puts("Mensaje recibido: #{inspect(message)}")
+    IO.puts("Ventas: {Mensaje recibido: #{inspect(message)}}")
 
     case message[:action] do
-      "reservar" ->
-        IO.puts("Recibiendo mensaje de compras #{message[:producto_id]}")
+      "reservar_producto" ->
+        IO.puts("Ventas: {Proceso de reserva de la compra #{message[:compra_id]}, producto #{message[:producto_id]}}")
         Libremarket.Ventas.Server.reservarProducto(message[:compra_id], message[:producto_id], message[:cantidad])
+
 
       _ ->
         IO.puts("Acción desconocida: #{inspect(message)}")
@@ -122,8 +123,8 @@ defmodule Libremarket.Ventas.Server do
     GenServer.call({:global, __MODULE__}, :vendedores)
   end
 
-  def reservarProducto(pid \\ __MODULE__, producto_id, cantidad) do
-    GenServer.cast({:global, __MODULE__}, {:reservar, producto_id, cantidad})
+  def reservarProducto(pid \\ __MODULE__, compra_id, producto_id, cantidad) do
+    GenServer.cast({:global, __MODULE__}, {:reservar, compra_id, producto_id, cantidad})
   end
 
   def liberarProducto(pid \\ __MODULE__, id, cantidad) do
