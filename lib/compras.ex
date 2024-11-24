@@ -20,7 +20,7 @@ defmodule Libremarket.Compras do
 
   def seleccionarProducto(compra_id, producto_id, cantidad) do
     resultado = Libremarket.Ventas.Server.reservarProducto(compra_id, producto_id, cantidad)
-
+    resultado
   end
 
   # def seleccionarEnvio(tipoEnvio) do
@@ -49,11 +49,11 @@ defmodule Libremarket.Compras do
   end
 
   def informarRechazo(compra_id) do
-    IO.puts("Pago rechazado para la compra #{compra_id}")
+    IO.puts("Compras: Pago rechazado para la compra #{compra_id}")
   end
 
   def informarInfraccion(compra_id) do
-    IO.puts("Infracción detectada para la compra #{compra_id}")
+    IO.puts("Compras: Infracción detectada para la compra #{compra_id}")
   end
 end
 
@@ -108,20 +108,22 @@ defmodule Libremarket.Compras.Message do
   end
 
   def handle_cast({:reservar_producto, compra_id, producto_id, cantidad}, state) do
-    IO.puts("enviando mensaje a ventas #{compra_id}")
+    IO.puts("Compras: enviando mensaje a Ventas -reservar_producto: #{compra_id}")
     payload = :erlang.term_to_binary(%{action: "reservar_producto", compra_id: compra_id, producto_id: producto_id, cantidad: cantidad})
     Basic.publish(state.chan, "", "ventas", payload)
     {:noreply, state}
   end
 
   def handle_cast({:calcular_costo, compra_id}, state) do
+    IO.puts("Compras: enviando mensaje a Envios -calcular_costo: #{compra_id}")
     payload = :erlang.term_to_binary(%{action: "calcular_costo", compra_id: compra_id})
     Basic.publish(state.chan, "", "envios", payload)
     {:noreply, state}
   end
 
-  def handle_cast({:autorizar_pago, id_compras}, state) do
-    payload = :erlang.term_to_binary(%{action: "autorizar_pago", compra_id: id_compras})
+  def handle_cast({:autorizar_pago, compra_id}, state) do
+    IO.puts("Compras: enviando mensaje a Pagos -autorizar_pago: #{compra_id}")
+    payload = :erlang.term_to_binary(%{action: "autorizar_pago", compra_id: compra_id})
     Basic.publish(state.chan, "", "pagos", payload)
     {:noreply, state}
   end
@@ -139,19 +141,19 @@ defmodule Libremarket.Compras.Message do
 
     case message[:accion] do
       "detectar" ->
-        IO.puts("Compras: {Recibiendo mensaje a infracciones para compra #{message[:compra_id]}}")
+        IO.puts("Compras: {Recibiendo mensaje de Infracciones -actualizar_infraccion: #{message[:compra_id]}}")
         Libremarket.Compras.Server.actualizar_infraccion(message[:result], message[:compra_id])
 
       "reservar" ->
-        IO.puts("Compras: {Recibiendo mensaje de ventas para compra #{message[:compra_id]}}")
+        IO.puts("Compras: {Recibiendo mensaje de Ventas -actualizar_reserva: #{message[:compra_id]}}")
         Libremarket.Compras.Server.actualizar_reserva(message[:result], message[:compra_id], message[:producto_id])
 
       "autorizar" ->
-        IO.puts("Compras: {Recibiendo mensaje de pagos para compra #{message[:compra_id]}}")
+        IO.puts("Compras: {Recibiendo mensaje de Pagos -actualizar_autorizacion: #{message[:compra_id]}}")
         Libremarket.Compras.Server.actualizar_autorizacion(message[:result], message[:compra_id])
 
       "calcular" ->
-        IO.puts("Compras: {Recibiendo costo para compra #{message[:compra_id]}}")
+        IO.puts("Compras: {Recibiendo mensaje de Envios -actualizar_costo: #{message[:compra_id]}}")
         Libremarket.Compras.Server.actualizar_costo(message[:result], message[:compra_id])
 
       _ ->
@@ -274,15 +276,21 @@ defmodule Libremarket.Compras.Server do
 
   @impl true
   def handle_cast({:selecc_producto, compra_id, producto_id, cantidad, tipoPago, tipoEnvio}, state) do
-    #Libremarket.Compras.Message.detectar_infraccion(compra_id)
+    Libremarket.Compras.Message.detectar_infraccion(compra_id)
     Libremarket.Compras.Message.reservar_producto(compra_id, producto_id, cantidad)
+    new_state = update_in(state[compra_id], fn compra_state ->
+      compra_state
+      |> Map.put("producto", producto_id)
+      |> Map.put("cantidad", cantidad)
+    end)
+
     GenServer.cast(self(), {:selecc_envio, compra_id, tipoEnvio})
-    #GenServer.cast(self(), {:selecc_pago, compra_id, tipoPago})
-    IO.inspect({:procesando, compra_id, producto_id, cantidad}, label: "Seleccionando producto")
+    GenServer.cast(self(), {:selecc_pago, compra_id, tipoPago})
+    # IO.inspect({:procesando, compra_id, producto_id, cantidad}, label: "Seleccionando producto")
 
     # Responder al cliente
     #{:reply, :ok, state}
-    {:noreply, state}
+    {:noreply, new_state}
   end
 
   @impl true
@@ -296,7 +304,7 @@ defmodule Libremarket.Compras.Server do
     #compra_state = Map.get(state, compra_id, %{})
     #new_compra_state = Map.merge(compra_state, result)
     new_state = Map.put(state, compra_id, new_compra_state)
-    {:noreply, state}
+    {:noreply, new_state}
   end
 
   @impl true
@@ -385,9 +393,9 @@ defmodule Libremarket.Compras.Server do
   end
 
   @impl true
-  def handle_call({:actualizar_autorizacion, resultado, compra_id}, _from, state) do
+  def handle_call({:actualizar_reserva, resultado, compra_id, producto_id}, _from, state) do
     IO.puts(
-      "Compras: {Actualizando autorizacion para compra #{compra_id} con resultado: #{inspect(resultado)}}"
+      "Compras: {Actualizando reserva para compra #{compra_id} con resultado: #{inspect(resultado)}}"
     )
 
     compra_state = Map.get(state, compra_id, %{})
@@ -396,12 +404,33 @@ defmodule Libremarket.Compras.Server do
       {:reply, {:error, "Compra no encontrada"}, state}
     else
       # Actualizamos el valor de "reservado" en compra_state con el resultado
-      new_compra_state = Map.put(compra_state, "pago autorizado", resultado)
+      new_compra_state = Map.put(compra_state, "reservado", resultado)
 
       # Actualizamos el estado general con el nuevo estado de la compra
       new_state = Map.put(state, compra_id, new_compra_state)
 
       {:reply, {:ok, new_compra_state}, new_state}
+    end
+  end
+
+  @impl true
+  def handle_call({:actualizar_autorizacion, resultado, compra_id}, _from, state) do
+    IO.puts(
+      "Compras: {Actualizando autorización para compra #{compra_id} con resultado: #{inspect(resultado)}}"
+    )
+
+    compra_state = Map.get(state, compra_id, %{})
+
+    if compra_state == %{} do
+      {:reply, {:error, "Compra no encontrada"}, state}
+    else
+      # Actualizamos el valor de "reserva" en compra_state con el resultado
+        new_state = update_in(state[compra_id], fn compra_state ->
+          compra_state
+          |> Map.put("pago autorizado", resultado)
+        end)
+
+      {:reply, {:ok, compra_state}, new_state}
     end
   end
 
@@ -417,14 +446,13 @@ defmodule Libremarket.Compras.Server do
       {:reply, {:error, "Compra no encontrada"}, state}
     else
       # Actualizamos el valor de "reserva" en compra_state con el resultado
-      new_compra_state1 = Map.put(compra_state, "reservado", resultado)
-      compra_state2 = Map.get(state, compra_id, %{})
-      new_compra_state2 = Map.put(compra_state2, "producto", producto_id)
+        new_state = update_in(state[compra_id], fn compra_state ->
+          compra_state
+          |> Map.put("reservado", resultado)
+          |> Map.put("producto", producto_id)
+        end)
 
-      # Actualizamos el estado general con el nuevo estado de la compra
-      new_state = Map.put(state, compra_id, new_compra_state2)
-
-      {:reply, {:ok, new_compra_state2}, new_state}
+      {:reply, {:ok, compra_state}, new_state}
     end
   end
 

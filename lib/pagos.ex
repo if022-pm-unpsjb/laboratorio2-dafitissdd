@@ -18,10 +18,6 @@ defmodule Libremarket.Pagos.Message do
       )
     {:ok, chan} = Channel.open(conn)
 
-    # {:ok, _} = Queue.declare(chan, @queue, auto_delete: true)
-    # {:ok, _consume_tag} = Basic.consume(chan, @queue, nil, no_ack: true)
-    # {:ok, chan}
-
     Queue.declare(chan, @queue, auto_delete: true)
     Basic.consume(chan, @queue, nil, no_ack: true)
 
@@ -39,6 +35,11 @@ defmodule Libremarket.Pagos.Message do
 
     Basic.publish(state.chan, "", "compras", payload)
     {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:basic_consume_ok, _consumer_info}, chan) do
+    {:noreply, chan}
   end
 
   @impl true

@@ -191,38 +191,35 @@ defmodule Libremarket.Ventas.Server do
   def handle_cast({:reservar, compra_id, producto_id, cantidad}, state) do
     productos = state.productos
 
-    # Buscar el producto por su id usando Enum.find
+    # Buscar el producto por su id
     producto = Enum.find(productos, fn p -> p.id == producto_id end)
 
-    # Verificamos si el producto existe
-    if producto do
-      # Verificamos si hay suficiente stock
-      if producto.stock >= cantidad do
-        # Actualizamos solo el producto seleccionado
-        producto_actualizado =
-          producto
-          # Reducir el stock
-          |> Map.update!(:stock, &(&1 - cantidad))
-          # Aumentar la cantidad reservada
-          |> Map.update!(:reservado, &(&1 + cantidad))
+    # Si el producto existe y tiene stock suficiente
+    if producto && producto.stock >= cantidad do
+      # Actualizamos el producto: reducimos el stock y aumentamos la cantidad reservada
+      producto_actualizado =
+        producto
+        |> Map.update!(:stock, &(&1 - cantidad))
+        |> Map.update!(:reservado, &(&1 + cantidad))
 
-        # Actualizamos la lista de productos con el producto actualizado
-        productos_actualizados =
-          Enum.map(productos, fn p ->
-            if p.id == producto_id do
-              producto_actualizado
-            else
-              p
-            end
-          end)
-          Libremarket.Ventas.Message.mandar_actualizacion(compra_id, producto_id, true)
-        # Devolvemos la lista actualizada y confirmamos la reserva exitosa
-        {:noreply, productos_actualizados}
-      end
+      # Actualizamos la lista de productos
+      productos_actualizados =
+        Enum.map(productos, fn p ->
+          if p.id == producto_id do
+            producto_actualizado
+          else
+            p
+          end
+        end)
+
+      # Mandamos la actualización y retornamos el nuevo estado
+      Libremarket.Ventas.Message.mandar_actualizacion(compra_id, producto_id, true)
+      {:noreply, %{state | productos: productos_actualizados}}
+
     else
-      # Producto no encontrado o no hay stock
-        Libremarket.Ventas.Message.mandar_actualizacion(compra_id, producto_id, false)
-        {:noreply, state}
+      # Si no hay stock o no se encuentra el producto, mandamos la actualización de fallo
+      Libremarket.Ventas.Message.mandar_actualizacion(compra_id, producto_id, false)
+      {:noreply, state} # No se actualiza el estado
     end
   end
 
