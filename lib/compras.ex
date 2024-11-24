@@ -23,17 +23,6 @@ defmodule Libremarket.Compras do
     resultado
   end
 
-  # def seleccionarEnvio(tipoEnvio) do
-  #   valor = :rand.uniform(100)
-  #   costo = 0
-
-  #   if valor < 80 do
-  #     costo = Libremarket.Envios.calcularCosto()
-  #   end
-
-  #   %{"envio" => tipoEnvio, "costoEnvio" => costo}
-  # end
-
   def guardarEstado(state) do
     :dets.insert(@tabla, {:compras, state})
   end
@@ -300,9 +289,6 @@ defmodule Libremarket.Compras.Server do
     end
     compra_state = Map.get(state, compra_id, %{})
     new_compra_state = Map.put(compra_state, "envio", tipoEnvio)
-    #result = Libremarket.Compras.seleccionarEnvio(tipoEnvio)
-    #compra_state = Map.get(state, compra_id, %{})
-    #new_compra_state = Map.merge(compra_state, result)
     new_state = Map.put(state, compra_id, new_compra_state)
     {:noreply, new_state}
   end
@@ -424,7 +410,7 @@ defmodule Libremarket.Compras.Server do
     if compra_state == %{} do
       {:reply, {:error, "Compra no encontrada"}, state}
     else
-      # Actualizamos el valor de "reserva" en compra_state con el resultado
+      # Actualizamos el valor de "pago autorizado" en compra_state con el resultado
         new_state = update_in(state[compra_id], fn compra_state ->
           compra_state
           |> Map.put("pago autorizado", resultado)
@@ -467,8 +453,8 @@ defmodule Libremarket.Compras.Server do
     if compra_state == %{} do
       {:reply, {:error, "Compra no encontrada"}, state}
     else
-      # Actualizamos el valor de "reservado" en compra_state con el resultado
-      new_compra_state = Map.put(compra_state, "costo", resultado)
+      # Actualizamos el valor de "costo" en compra_state con el resultado
+      new_compra_state = Map.put(compra_state, "costo envio", resultado)
 
       # Actualizamos el estado general con el nuevo estado de la compra
       new_state = Map.put(state, compra_id, new_compra_state)

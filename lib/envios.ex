@@ -33,7 +33,7 @@ defmodule Libremarket.Envios.Message do
   def handle_cast({:mandar_actualizacion, id, message}, state) do
     IO.puts("Envios: {Enviando actualización: #{inspect(message)}}")
     payload = :erlang.term_to_binary(%{result: message, compra_id: id, accion: "calcular"})
-    #IO.puts("Enviando payload: #{inspect(payload)}")
+    # IO.puts("Enviando payload: #{inspect(payload)}")
 
     Basic.publish(state.chan, "", "compras", payload)
     {:noreply, state}
@@ -73,6 +73,7 @@ end
 defmodule Libremarket.Envios do
   @tabla :envios
   @intervalo 60_000
+
   def calcularCosto() do
     {:rand.uniform(10000)}
   end
@@ -83,7 +84,6 @@ defmodule Libremarket.Envios do
 
   def guardarEstado(state) do
     :dets.insert(@tabla, {:envios, state})
-    :timer.send_interval(@intervalo, :guardar_estado)
   end
 end
 
@@ -94,7 +94,7 @@ defmodule Libremarket.Envios.Server do
 
   use GenServer
   @tabla :envios
-
+  @intervalo 60_000
   # API del cliente
 
   @doc """
@@ -124,7 +124,6 @@ defmodule Libremarket.Envios.Server do
     GenServer.call({:global, __MODULE__}, :guardar_estado)
   end
 
-
   # Callbacks
 
   @spec init(any()) :: {:ok, any()} | {:stop, any()}
@@ -141,7 +140,8 @@ defmodule Libremarket.Envios.Server do
             [{_key, value}] -> value
           end
 
-        Libremarket.Envios.guardarEstado(state)
+        :timer.send_interval(@intervalo, :guardar_estado)
+
         {:ok, state}
 
       {:error, reason} ->
