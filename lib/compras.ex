@@ -73,6 +73,10 @@ defmodule Libremarket.Compras.Message do
     GenServer.cast(__MODULE__, {:calcular_costo,compra_id})
   end
 
+  def agendar_envio(compra_id, producto_id, cantidad) do
+    GenServer.cast(__MODULE__, {:agendar_envio, compra_id, producto_id, cantidad})
+  end
+
   @impl true
   def init(_state) do
     {:ok, conn} =
@@ -98,7 +102,7 @@ defmodule Libremarket.Compras.Message do
 
   def handle_cast({:reservar_producto, compra_id, producto_id, cantidad}, state) do
     IO.puts("Compras: enviando mensaje a Ventas -reservar_producto: #{compra_id}")
-    payload = :erlang.term_to_binary(%{action: "reservar_producto", compra_id: compra_id, producto_id: producto_id, cantidad: cantidad})
+    payload = :erlang.term_to_binary(%{accion: "reservar_producto", compra_id: compra_id, producto_id: producto_id, cantidad: cantidad})
     Basic.publish(state.chan, "", "ventas", payload)
     {:noreply, state}
   end
@@ -114,6 +118,13 @@ defmodule Libremarket.Compras.Message do
     IO.puts("Compras: enviando mensaje a Pagos -autorizar_pago: #{compra_id}")
     payload = :erlang.term_to_binary(%{action: "autorizar_pago", compra_id: compra_id})
     Basic.publish(state.chan, "", "pagos", payload)
+    {:noreply, state}
+  end
+
+  def handle_cast({:agendar_envio, compra_id, producto_id, cantidad}, state) do
+    IO.puts("Compras: enviando mensaje a Envios -agendar_envio: #{compra_id}")
+    payload = :erlang.term_to_binary(%{action: "agendar_envio", compra_id: compra_id, producto_id: producto_id, cantidad: cantidad})
+    Basic.publish(state.chan, "", "envios", payload)
     {:noreply, state}
   end
 
@@ -340,7 +351,8 @@ defmodule Libremarket.Compras.Server do
               if envio == "correo" do
                 producto_id = Map.get(compra_state, "producto", "unknown")
                 #producto_id = producto[:id]
-                Libremarket.Envios.Server.agendarEnvio(compra_id, producto_id, cantidad)
+                Libremarket.Compras.Message.agendar_envio(compra_id, producto_id, cantidad)
+                #Libremarket.Envios.Server.agendarEnvio(compra_id, producto_id, cantidad)
               end
 
               # Libremarket.Compras.Message.mandar_mensaje("Compra confirmada: #{compra_id}")

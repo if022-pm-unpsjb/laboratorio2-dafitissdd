@@ -106,11 +106,12 @@ defmodule Libremarket.Ventas.Message do
         Libremarket.Ventas.Server.actualizar_infraccion(message[:result], message[:compra_id])
 
       "autorizar" ->
-        IO.puts(
-          "Ventas: {Recibiendo mensaje de Pagos -actualizar_autorizacion: #{message[:compra_id]}}"
-        )
-
+        IO.puts("Ventas: {Recibiendo mensaje de Pagos -actualizar_autorizacion: #{message[:compra_id]}}")
         Libremarket.Ventas.Server.actualizar_autorizacion(message[:result], message[:compra_id])
+
+      "enviar" ->
+        IO.puts("Ventas: {Recibiendo mensaje de Envios -enviar_producto: #{message[:producto_id]}}")
+        Libremarket.Ventas.Server.enviarProducto(message[:producto_id], message[:cantidad], message[:compra_id])
 
       _ ->
         IO.puts("Ventas: acción desconocida: #{inspect(message)}")
@@ -164,8 +165,8 @@ defmodule Libremarket.Ventas.Server do
     GenServer.call({:global, __MODULE__}, {:buscar_vendedor, vendedor_id})
   end
 
-  def enviarProducto(pid \\ __MODULE__, id, cantidad) do
-    GenServer.call({:global, __MODULE__}, {:enviar, id, cantidad})
+  def enviarProducto(pid \\ __MODULE__, producto_id, cantidad, compra_id) do
+    GenServer.call({:global, __MODULE__}, {:enviar, producto_id, cantidad, compra_id})
   end
 
   def obtener_estado(pid \\ __MODULE__) do
@@ -238,10 +239,10 @@ defmodule Libremarket.Ventas.Server do
     nueva_compra =
       compras
       |> Map.get(compra_id, %{})
-      |> Map.put(:producto_id, producto_id)
-      |> Map.put(:cantidad, cantidad)
-      |> Map.put(:infraccion, "proceso")
-      |> Map.put(:pago_autorizado, "proceso")
+      |> Map.put("producto_id", producto_id)
+      |> Map.put("cantidad", cantidad)
+      |> Map.put("infraccion", "proceso")
+      |> Map.put("pago_autorizado", "proceso")
 
     nuevas_compras = Map.put(compras, compra_id, nueva_compra)
 
@@ -363,7 +364,7 @@ defmodule Libremarket.Ventas.Server do
   end
 
   @impl true
-  def handle_call({:enviar, id, cantidad}, _from, state) do
+  def handle_call({:enviar, id, cantidad, compra_id}, _from, state) do
     productos = state.productos
 
     # Buscar el producto por su id usando Enum.find
@@ -383,7 +384,7 @@ defmodule Libremarket.Ventas.Server do
             p
           end
         end)
-
+      IO.puts("Ventas: compra #{compra_id} enviada")
       {:reply, {:ok, producto_actualizado}, %{state | productos: productos_actualizados}}
     else
       # Producto no encontrado

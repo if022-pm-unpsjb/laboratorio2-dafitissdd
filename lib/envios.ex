@@ -29,13 +29,23 @@ defmodule Libremarket.Envios.Message do
     GenServer.cast(__MODULE__, {:mandar_actualizacion, id_compras, resultado})
   end
 
+  def enviar_producto(compra_id, producto_id, cantidad) do
+    GenServer.cast(__MODULE__, {:enviar_producto, compra_id, producto_id, cantidad})
+  end
+
   @impl true
   def handle_cast({:mandar_actualizacion, id, message}, state) do
     IO.puts("Envios: {Enviando actualización: #{inspect(message)}}")
     payload = :erlang.term_to_binary(%{result: message, compra_id: id, accion: "calcular"})
-    # IO.puts("Enviando payload: #{inspect(payload)}")
-
     Basic.publish(state.chan, "", "compras", payload)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast({:enviar_producto, compra_id, producto_id, cantidad}, state) do
+    IO.puts("Envios: {Enviando mensaje a Ventas}")
+    payload = :erlang.term_to_binary(%{compra_id: compra_id, producto_id: producto_id, cantidad: cantidad, accion: "enviar"})
+    Basic.publish(state.chan, "", "ventas", payload)
     {:noreply, state}
   end
 
@@ -54,6 +64,10 @@ defmodule Libremarket.Envios.Message do
       "calcular_costo" ->
         IO.puts("Envios: {Calculando costo de la compra #{message[:compra_id]}}")
         Libremarket.Envios.Server.calcularCosto(message[:compra_id])
+
+      "agendar_envio" ->
+        IO.puts("Envios: {Agendando envio de la compra #{message[:compra_id]}}")
+        Libremarket.Envios.Server.agendarEnvio(message[:compra_id], message[:producto_id], message[:cantidad])
 
       _ ->
         IO.puts("Acción desconocida: #{inspect(message)}")
@@ -109,7 +123,7 @@ defmodule Libremarket.Envios.Server do
   end
 
   def agendarEnvio(pid \\ __MODULE__, compra_id, producto_id, cantidad) do
-    GenServer.call({:global, __MODULE__}, {:agendar, compra_id, producto_id, cantidad})
+    GenServer.cast({:global, __MODULE__}, {:agendar, compra_id, producto_id, cantidad})
   end
 
   def listarEnvios(pid \\ __MODULE__) do
@@ -161,10 +175,11 @@ defmodule Libremarket.Envios.Server do
   end
 
   @impl true
-  def handle_call({:agendar, compra_id, producto_id, cantidad}, _from, state) do
+  def handle_cast({:agendar, compra_id, producto_id, cantidad}, state) do
     result = Libremarket.Envios.agendar(compra_id, producto_id, cantidad)
+    Libremarket.Envios.Message.enviar_producto(compra_id, producto_id, cantidad)
     new_state = Map.put(state, compra_id, result)
-    {:reply, result, new_state}
+    {:noreply, new_state}
   end
 
   @impl true
