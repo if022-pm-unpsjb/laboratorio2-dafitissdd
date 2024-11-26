@@ -93,7 +93,7 @@ defmodule Libremarket.Envios do
   end
 
   def agendar(compra_id, producto_id, cantidad) do
-    %{"estado" => "agendada"}
+    "agendada"
   end
 
   def guardarEstado(state) do
@@ -170,7 +170,13 @@ defmodule Libremarket.Envios.Server do
   def handle_cast({:calcular, compra_id}, state) do
     result = Libremarket.Envios.calcularCosto()
     Libremarket.Envios.Message.mandar_actualizacion(compra_id, result)
-    new_state = Map.put(state, compra_id, result)
+    nuevo_envio =
+      state
+      |> Map.get(compra_id, %{})
+      |> Map.put("costo", result)
+      |> Map.put("estado", "proceso")
+
+    new_state = Map.put(state, compra_id, nuevo_envio)
     {:noreply, new_state}
   end
 
@@ -178,7 +184,11 @@ defmodule Libremarket.Envios.Server do
   def handle_cast({:agendar, compra_id, producto_id, cantidad}, state) do
     result = Libremarket.Envios.agendar(compra_id, producto_id, cantidad)
     Libremarket.Envios.Message.enviar_producto(compra_id, producto_id, cantidad)
-    new_state = Map.put(state, compra_id, result)
+
+    envio_state = Map.get(state, compra_id, %{})
+    new_envio_state = Map.put(envio_state, "estado", result)
+    new_state = Map.put(state, compra_id, new_envio_state)
+
     {:noreply, new_state}
   end
 
