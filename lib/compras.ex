@@ -364,7 +364,7 @@ defmodule Libremarket.Compras.Server do
             false #%{"confirmada" => false}
           end
 
-        #new_compra_state = Map.merge(compra_state, result)
+        IO.puts("Compras: compra #{compra_id} confirmada")
         new_compra_state = Map.put(compra_state, "confirmada", result)
         new_state = Map.put(state, compra_id, new_compra_state)
 
