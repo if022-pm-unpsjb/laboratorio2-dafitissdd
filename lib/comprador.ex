@@ -12,7 +12,7 @@ defmodule Comprador do
       Libremarket.Compras.Server.seleccionarProducto(idCompra, idProducto, cantidad, tipoPago, tipoEnvio)
       #Libremarket.Compras.Server.seleccionarEnvio(idCompra, tipoEnvio)
       #Libremarket.Compras.Server.seleccionarPago(idCompra, tipoPago)
-      #Libremarket.Compras.Server.confirmar_compra(idCompra, tipoPago)
+      #Libremarket.Compras.Server.confirmar_compra(idCompra)
     else
       {:error, "Error al generar ID de compra"}
     end

@@ -5,15 +5,15 @@ defmodule Libremarket.Compras do
     map =
           %{
             "vendedor" => vendedor_id,
-            "infraccion" => nil,
-            "reservado" => nil,
+            "infraccion" => "proceso",
+            "reservado" => "proceso",
             "producto" => nil,
             "cantidad" => nil,
-            "reservado" => nil,
+            #"reservado" => nil,
             "confirmada" => nil,
             "envio" => nil,
             "pago" => nil,
-            "pago autorizado" => nil
+            "pago autorizado" => "proceso"
           }
     map
   end
@@ -201,8 +201,8 @@ defmodule Libremarket.Compras.Server do
     GenServer.call({:global, __MODULE__}, :obtener_estado)
   end
 
-  def confirmar_compra(_ \\ __MODULE__, compra_id, tipoPago) do
-    GenServer.call({:global, __MODULE__}, {:confirmar_compra, compra_id, tipoPago})
+  def confirmar_compra(_ \\ __MODULE__, compra_id) do
+    GenServer.call({:global, __MODULE__}, {:confirmar_compra, compra_id})
   end
 
   def registrar_envio(_ \\ __MODULE__, compra_id, producto_id, cantidad) do
@@ -299,6 +299,7 @@ defmodule Libremarket.Compras.Server do
     new_compra_state = Map.put(compra_state, "pago", tipoPago)
     new_state = Map.put(state, compra_id, new_compra_state)
     Libremarket.Compras.Message.autorizar_pago(compra_id)
+    GenServer.cast(self(), {:confirmar_compra, compra_id})
     {:noreply, new_state}
   end
 
@@ -314,46 +315,61 @@ defmodule Libremarket.Compras.Server do
   end
 
   @impl true
-  def handle_call({:confirmar_compra, compra_id, tipoPago}, _from, state) do
+  def handle_info({:confirmar_compra, compra_id}, state) do
+    # Llama directamente a `handle_cast` para reutilizar la lógica
+    handle_cast({:confirmar_compra, compra_id}, state)
+  end
+
+  @impl true
+  def handle_cast({:confirmar_compra, compra_id}, state) do
     compra_state = Map.get(state, compra_id, %{})
     # Asegúrate de que la compra existe y maneja el caso donde no existe
     if compra_state == %{} do
-      {:reply, {:error, "Compra no encontrada"}, state}
+      #{:reply, {:error, "Compra no encontrada"}, state}
+      Logger.error("Compra #{compra_id} no encontrada")
+      {:noreply, state}
     else
       infraccion = Map.get(compra_state, "infraccion", "unknown")
       reservado = Map.get(compra_state, "reservado", "unknown")
       envio = Map.get(compra_state, "envio", "unknown")
       cantidad = Map.get(compra_state, "cantidad", "unknown")
+      autorizada = Map.get(compra_state, "pago autorizado", "unknown")
 
-      result =
-        if infraccion == "ok" && reservado == true do
-          #GenServer.cast(self(), {:selecc_pago, compra_id, tipoPago})
-          autorizada = Map.get(compra_state, "pago autorizado", "unknown")
+      if infraccion == "proceso" || reservado == "proceso" || autorizada == "proceso" do
+        # Reintentar después de 1000 ms (1 segundo)
+        Process.send_after(self(), {:confirmar_compra, compra_id}, 6000)
+        {:noreply, state}
+      else
 
-          if autorizada == true do
-            if envio == "correo" do
-              producto = Map.get(compra_state, "producto", "unknown")
-              producto_id = producto[:id]
-              Libremarket.Envios.Server.agendarEnvio(compra_id, producto_id, cantidad)
+        result =
+          if infraccion == "ok" && reservado == true do
+
+            if autorizada == true do
+              if envio == "correo" do
+                producto_id = Map.get(compra_state, "producto", "unknown")
+                #producto_id = producto[:id]
+                Libremarket.Envios.Server.agendarEnvio(compra_id, producto_id, cantidad)
+              end
+
+              # Libremarket.Compras.Message.mandar_mensaje("Compra confirmada: #{compra_id}")
+            else
+              Libremarket.Ventas.Server.liberarProducto(compra_id, cantidad)
+              Libremarket.Compras.informarRechazo(compra_id)
             end
 
-            # Libremarket.Compras.Message.mandar_mensaje("Compra confirmada: #{compra_id}")
+            true #%{"confirmada" => true}#, "autorizada" => autorizada}
           else
             Libremarket.Ventas.Server.liberarProducto(compra_id, cantidad)
-            Libremarket.Compras.informarRechazo(compra_id)
+            Libremarket.Compras.informarInfraccion(compra_id)
+            false #%{"confirmada" => false}
           end
 
-          %{"confirmada" => true, "autorizada" => autorizada}
-        else
-          Libremarket.Ventas.Server.liberarProducto(compra_id, cantidad)
-          Libremarket.Compras.informarInfraccion(compra_id)
-          %{"confirmada" => false}
-        end
+        #new_compra_state = Map.merge(compra_state, result)
+        new_compra_state = Map.put(compra_state, "confirmada", result)
+        new_state = Map.put(state, compra_id, new_compra_state)
 
-      new_compra_state = Map.merge(compra_state, result)
-      new_state = Map.put(state, compra_id, new_compra_state)
-
-      {:reply, new_compra_state, new_state}
+        {:noreply, new_state}
+      end
     end
   end
 

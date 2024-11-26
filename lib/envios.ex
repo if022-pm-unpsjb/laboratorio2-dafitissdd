@@ -75,7 +75,7 @@ defmodule Libremarket.Envios do
   @intervalo 60_000
 
   def calcularCosto() do
-    {:rand.uniform(10000)}
+    :rand.uniform(10000)
   end
 
   def agendar(compra_id, producto_id, cantidad) do
