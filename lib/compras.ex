@@ -18,10 +18,10 @@ defmodule Libremarket.Compras do
     map
   end
 
-  def seleccionarProducto(compra_id, producto_id, cantidad) do
-    resultado = Libremarket.Ventas.Server.reservarProducto(compra_id, producto_id, cantidad)
-    resultado
-  end
+  # def seleccionarProducto(compra_id, producto_id, cantidad) do
+  #   resultado = Libremarket.Ventas.Server.reservarProducto(compra_id, producto_id, cantidad)
+  #   resultado
+  # end
 
   def guardarEstado(state) do
     :dets.insert(@tabla, {:compras, state})
@@ -184,9 +184,7 @@ defmodule Libremarket.Compras.Server do
   def seleccionarProducto(_ \\ __MODULE__, compra_id, producto_id, cantidad, tipoPago, tipoEnvio) do
     GenServer.cast(
       {:global, __MODULE__},
-      {:selecc_producto, compra_id, producto_id, cantidad, tipoPago, tipoEnvio}#,
-#      15_000
-    )
+      {:selecc_producto, compra_id, producto_id, cantidad, tipoPago, tipoEnvio})
   end
 
   def seleccionarEnvio(_ \\ __MODULE__, compra_id, tipoEnvio) do
@@ -243,10 +241,8 @@ defmodule Libremarket.Compras.Server do
             [] -> %{}
             [{_key, value}] -> value
           end
-
         :timer.send_interval(@intervalo, self(), :guardar_estado)
         {:ok, state}
-
       {:error, reason} ->
         {:stop, reason}
     end
@@ -275,10 +271,6 @@ defmodule Libremarket.Compras.Server do
 
     GenServer.cast(self(), {:selecc_envio, compra_id, tipoEnvio})
     GenServer.cast(self(), {:selecc_pago, compra_id, tipoPago})
-    # IO.inspect({:procesando, compra_id, producto_id, cantidad}, label: "Seleccionando producto")
-
-    # Responder al cliente
-    #{:reply, :ok, state}
     {:noreply, new_state}
   end
 
@@ -326,7 +318,7 @@ defmodule Libremarket.Compras.Server do
     # Asegúrate de que la compra existe y maneja el caso donde no existe
     if compra_state == %{} do
       #{:reply, {:error, "Compra no encontrada"}, state}
-      Logger.error("Compra #{compra_id} no encontrada")
+      #Logger.error("Compra #{compra_id} no encontrada")
       {:noreply, state}
     else
       infraccion = Map.get(compra_state, "infraccion", "unknown")
@@ -353,13 +345,13 @@ defmodule Libremarket.Compras.Server do
 
               # Libremarket.Compras.Message.mandar_mensaje("Compra confirmada: #{compra_id}")
             else
-              Libremarket.Ventas.Server.liberarProducto(compra_id, cantidad)
+              #Libremarket.Ventas.Server.liberarProducto(compra_id, cantidad)
               Libremarket.Compras.informarRechazo(compra_id)
             end
 
             true #%{"confirmada" => true}#, "autorizada" => autorizada}
           else
-            Libremarket.Ventas.Server.liberarProducto(compra_id, cantidad)
+            #Libremarket.Ventas.Server.liberarProducto(compra_id, cantidad)
             Libremarket.Compras.informarInfraccion(compra_id)
             false #%{"confirmada" => false}
           end

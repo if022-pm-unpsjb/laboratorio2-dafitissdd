@@ -34,6 +34,7 @@ defmodule Libremarket.Pagos.Message do
     payload = :erlang.term_to_binary(%{result: message, compra_id: id, accion: "autorizar"})
 
     Basic.publish(state.chan, "", "compras", payload)
+    Basic.publish(state.chan, "", "ventas", payload)
     {:noreply, state}
   end
 

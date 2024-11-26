@@ -52,6 +52,8 @@ defmodule Libremarket.Infracciones.Message do
     #IO.puts("Enviando payload: #{inspect(payload)}")
 
     Basic.publish(state.chan, "", "compras", payload)
+    Basic.publish(state.chan, "", "ventas", payload)
+
     {:noreply, state}
   end
 
@@ -72,7 +74,7 @@ defmodule Libremarket.Infracciones.Message do
         Libremarket.Infracciones.Server.detectarInfraccion(message[:compra_id])
 
       _ ->
-        IO.puts("Acción desconocida: #{inspect(message)}")
+        IO.puts("Infracciones: acción desconocida: #{inspect(message)}")
     end
 
     {:noreply, state}
